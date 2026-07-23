@@ -132,6 +132,42 @@ ORDER BY score DESC, coalesce(p2.rating, 0) DESC, p2.id ASC
 LIMIT $limit
 `;
 
+// ---------------------------------------------------------------------------
+// Task 2.5 — Ghi nhận hành vi VIEWED khi xem chi tiết sản phẩm
+// ---------------------------------------------------------------------------
+
+/**
+ * Ghi nhận hành vi "đã xem" (VIEWED) cho 1 khách hàng với 1 sản phẩm,
+ * đồng thời trả về thông tin chi tiết sản phẩm đó.
+ *
+ * - MERGE (c)-[:VIEWED]->(p): tạo quan hệ nếu chưa có, không trùng lặp.
+ * - SET v.last_viewed_at: cập nhật thời điểm xem lần gần nhất.
+ * - Trả về đầy đủ thông tin sản phẩm (giống GET_PRODUCT_BY_ID) để route
+ *   handler không cần gọi thêm 1 câu query riêng.
+ *
+ * Nếu customerId = null (khách vãng lai, chưa chọn trong dropdown),
+ * route handler sẽ bỏ qua phần ghi VIEWED và chỉ gọi GET_PRODUCT_BY_ID.
+ */
+const RECORD_VIEWED_AND_GET_PRODUCT = `
+MATCH (p:Product {id: $productId})
+OPTIONAL MATCH (p)-[:BELONGS_TO]->(cat:Category)
+WITH p, cat
+OPTIONAL MATCH (c:Customer {customer_id: $customerId})
+FOREACH (_ IN CASE WHEN c IS NOT NULL THEN [1] ELSE [] END |
+  MERGE (c)-[v:VIEWED]->(p)
+  SET v.last_viewed_at = datetime()
+)
+RETURN p.id            AS id,
+       p.title         AS title,
+       p.final_price   AS final_price,
+       p.rating        AS rating,
+       p.image         AS image,
+       cat.category_id   AS category_id,
+       cat.category_name AS category_name,
+       count { (:Customer)-[:BOUGHT]->(p) }  AS bought_count,
+       count { (:Customer)-[:VIEWED]->(p) }  AS viewed_count
+`;
+
 module.exports = {
   COUNT_PRODUCTS,
   LIST_PRODUCTS,
@@ -141,4 +177,5 @@ module.exports = {
   GET_CUSTOMER_BY_ID,
   RECOMMEND_FOR_CUSTOMER,
   RECOMMEND_FOR_PRODUCT,
+  RECORD_VIEWED_AND_GET_PRODUCT,
 };

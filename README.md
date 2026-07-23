@@ -94,16 +94,37 @@ cd backend
 npm run test:api
 ```
 
+## 6. Kiểm tra hiệu năng EXPLAIN / PROFILE (Task 2.6)
+
+Server **không** cần chạy. Script kết nối trực tiếp tới Neo4j:
+
+```bash
+cd backend
+npm run explain
+```
+
+Script sẽ:
+- Kiểm tra 3 unique constraint (Product.id, Customer.customer_id, Category.category_id)
+- Chạy `EXPLAIN` cho Query A & B → in kế hoạch thực thi, xác nhận Index Seek
+- Chạy `PROFILE` cho Query A & B → in db hits, thời gian, xác nhận < 1 giây
+- In sẵn cú pháp Cypher để copy vào Neo4j Browser chạy thủ công cho báo cáo
+
 ## API endpoints
 
 | Method | Endpoint | Mô tả |
 |---|---|---|
 | GET | `/api/products?page=&limit=&search=&categoryId=` | Danh sách sản phẩm, phân trang + tìm kiếm theo tên |
-| GET | `/api/products/:id` | Chi tiết 1 sản phẩm + tên danh mục |
+| GET | `/api/products/:id` | Chi tiết 1 sản phẩm + tên danh mục + **ghi VIEWED** (Task 2.5) |
 | GET | `/api/products/:id/recommendations?limit=` | **Query B** — gợi ý mua kèm theo sản phẩm đang xem |
 | GET | `/api/customers?page=&limit=&search=` | Danh sách khách hàng (dropdown "đăng nhập giả lập") |
 | GET | `/api/customers/:id` | Thông tin 1 khách hàng |
 | GET | `/api/customers/:id/recommendations?limit=` | **Query A** — gợi ý cá nhân hoá theo khách hàng |
+
+### Task 2.5 — Header `x-customer-id`
+
+Khi gọi `GET /api/products/:id`, nếu request có header `x-customer-id` (ví dụ `C008`),
+backend sẽ tự động ghi nhận quan hệ `VIEWED` vào đồ thị bằng `MERGE` (không trùng lặp).
+Nếu không có header này (khách vãng lai), chỉ trả dữ liệu sản phẩm bình thường.
 
 Toàn bộ câu Cypher nằm ở [`backend/queries/cypher.js`](backend/queries/cypher.js) — tiện copy vào báo cáo.
 
@@ -114,13 +135,14 @@ backend/
   db.js                    kết nối Neo4j + helper readQuery/writeQuery
   server.js                khởi tạo Express, gắn route, error handler
   queries/cypher.js        toàn bộ câu Cypher (Query A, Query B, ...)
-  routes/products.js       task 2.1, 2.2, 2.3
+  routes/products.js       task 2.1, 2.2, 2.3, 2.5
   routes/customers.js      task 2.4
   utils/http.js            asyncHandler, HttpError, phân trang
   scripts/
     generate-bought.js     sinh dữ liệu BOUGHT mô phỏng
     import.js              xoá sạch + import lại Neo4j
     test-api.js            smoke test toàn bộ endpoint
+    explain-profile.js     task 2.6: EXPLAIN/PROFILE Query A & B
 frontend/                  React (Vite) + React Router
 data2/                     6 file CSV gốc + bought_relations_full.csv
 ```
