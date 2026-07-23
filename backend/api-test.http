@@ -1,0 +1,44 @@
+### File test API cho HTTP Client của IntelliJ.
+### Cách dùng: chạy backend trước (npm run dev), sau đó bấm nút "Run" (mũi tên xanh)
+### bên trái mỗi request bên dưới. Response hiện ra ngay trong IDE.
+
+@baseUrl = http://localhost:5000
+
+### 0. Kiểm tra server sống
+GET {{baseUrl}}/
+
+### 2.1 Danh sách sản phẩm - trang 1
+GET {{baseUrl}}/api/products?page=1&limit=5
+
+### 2.1 Danh sách sản phẩm - tìm kiếm theo tên
+GET {{baseUrl}}/api/products?search=máy xay&limit=5
+
+### 2.1 Danh sách sản phẩm - trang không tồn tại (vẫn phải trả 200, data rỗng)
+GET {{baseUrl}}/api/products?page=999
+
+### 2.2 Chi tiết 1 sản phẩm (đổi id cho khớp dữ liệu thật của bạn)
+GET {{baseUrl}}/api/products/22539952524
+
+### 2.2 Sản phẩm không tồn tại -> phải trả 404
+GET {{baseUrl}}/api/products/khong-ton-tai
+
+### 2.3 Gợi ý mua kèm theo sản phẩm đang xem (Query B)
+GET {{baseUrl}}/api/products/22539952524/recommendations
+
+### 2.3 Gợi ý mua kèm - giới hạn 3 kết quả
+GET {{baseUrl}}/api/products/22539952524/recommendations?limit=3
+
+### 2.4 Danh sách khách hàng (dropdown "đăng nhập giả lập")
+GET {{baseUrl}}/api/customers?limit=10
+
+### 2.4 Tìm khách hàng theo tên/id
+GET {{baseUrl}}/api/customers?search=C008
+
+### 2.4 Chi tiết 1 khách hàng
+GET {{baseUrl}}/api/customers/C008
+
+### 2.4 Gợi ý cá nhân hoá theo khách hàng (Query A)
+GET {{baseUrl}}/api/customers/C008/recommendations
+
+### Endpoint không tồn tại -> phải trả 404 JSON
+GET {{baseUrl}}/api/khong-co-endpoint-nay
