@@ -1,6 +1,6 @@
 const express = require('express');
 
-const { readQuery, int } = require('../db');
+const { readQuery, writeQuery, int } = require('../db');
 const q = require('../queries/cypher');
 const {
   asyncHandler,
@@ -43,16 +43,36 @@ router.get(
 );
 
 /**
- * Task 2.2 — GET /api/products/:id
+ * Task 2.2 + Task 2.5 — GET /api/products/:id
  * Chi tiết 1 sản phẩm, kèm tên danh mục.
+ *
+ * Task 2.5: Nếu header `x-customer-id` có giá trị (do frontend gửi khi đã
+ * chọn khách hàng trong dropdown "đăng nhập giả lập"), backend sẽ tự động
+ * ghi nhận hành vi VIEWED bằng MERGE — không tạo trùng nếu đã xem trước đó.
+ * Khách vãng lai (chưa chọn khách) thì chỉ trả dữ liệu sản phẩm bình thường.
  */
 router.get(
   '/:id',
   asyncHandler(async (req, res) => {
-    const rows = await readQuery(q.GET_PRODUCT_BY_ID, { productId: String(req.params.id) });
+    const productId = String(req.params.id);
+
+    // TODO(security): Trong hệ thống thực, customerId phải lấy từ session/JWT
+    // đã xác thực. Ở đây dùng header giả lập cho mục đích đồ án.
+    const customerId = req.headers['x-customer-id']
+      ? String(req.headers['x-customer-id']).trim()
+      : null;
+
+    let rows;
+    if (customerId) {
+      // Ghi nhận VIEWED + lấy chi tiết sản phẩm trong cùng 1 câu query
+      rows = await writeQuery(q.RECORD_VIEWED_AND_GET_PRODUCT, { productId, customerId });
+    } else {
+      // Khách vãng lai — chỉ đọc, không ghi VIEWED
+      rows = await readQuery(q.GET_PRODUCT_BY_ID, { productId });
+    }
 
     if (rows.length === 0) {
-      throw new HttpError(404, `Không tìm thấy sản phẩm có id = ${req.params.id}`);
+      throw new HttpError(404, `Không tìm thấy sản phẩm có id = ${productId}`);
     }
 
     res.json({ data: rows[0] });

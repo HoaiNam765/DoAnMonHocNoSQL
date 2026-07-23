@@ -22,6 +22,13 @@ GET {{baseUrl}}/api/products/22539952524
 ### 2.2 Sản phẩm không tồn tại -> phải trả 404
 GET {{baseUrl}}/api/products/khong-ton-tai
 
+### 2.5 Chi tiết sản phẩm + ghi nhận VIEWED (có header x-customer-id)
+GET {{baseUrl}}/api/products/22539952524
+x-customer-id: C008
+
+### 2.5 Chi tiết sản phẩm — khách vãng lai (không gửi header → không ghi VIEWED)
+GET {{baseUrl}}/api/products/22539952524
+
 ### 2.3 Gợi ý mua kèm theo sản phẩm đang xem (Query B)
 GET {{baseUrl}}/api/products/22539952524/recommendations
 
