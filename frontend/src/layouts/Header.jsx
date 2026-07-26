@@ -1,6 +1,6 @@
 import { useContext, useEffect, useState } from "react";
-import { CustomerContext } from "../context/CustomerContext";
 import { getCustomers } from "../services/customerService";
+import { CustomerContext } from "../context/CustomerContext";
 
 function Header() {
     const [customers, setCustomers] = useState([]);
@@ -36,7 +36,7 @@ function Header() {
                 alignItems: "center",
             }}
         >
-            <h2>Neo4j E-Commerce</h2>
+            <h2>🛒 Neo4j Marketplace</h2>
 
             <div>
                 <strong>Khách hàng: </strong>
@@ -45,10 +45,8 @@ function Header() {
                     value={customerId}
                     onChange={(e) => setCustomerId(e.target.value)}
                     style={{
-                        padding: "8px 12px",
+                        padding: "8px",
                         borderRadius: "6px",
-                        border: "none",
-                        outline: "none",
                     }}
                 >
                     {customers.map((customer) => (
