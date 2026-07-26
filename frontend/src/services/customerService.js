@@ -1,4 +1,4 @@
-const API_URL = "http://localhost:5000/api/customers?page=1&limit=50";
+const API_URL = "http://localhost:5000/api/customers";
 
 export async function getCustomers() {
     const response = await fetch(API_URL);
@@ -7,23 +7,17 @@ export async function getCustomers() {
         throw new Error("Không lấy được danh sách khách hàng");
     }
 
-    return await response.json();
+    return response.json();
 }
 
-export async function getCustomerRecommendations(customerId){
-
+export async function getCustomerRecommendations(customerId, limit = 6) {
     const response = await fetch(
-
-        `http://localhost:5000/api/customers/${customerId}/recommendations`
-
+        `${API_URL}/${customerId}/recommendations?limit=${limit}`
     );
 
-    if(!response.ok){
-
-        throw new Error("Không lấy được Recommendation");
-
+    if (!response.ok) {
+        throw new Error("Không lấy được gợi ý");
     }
 
-    return await response.json();
-
+    return response.json();
 }

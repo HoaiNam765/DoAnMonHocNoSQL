@@ -1,59 +1,39 @@
 import { useEffect, useState } from "react";
 import { getRecommendations } from "../services/productService";
-import ProductCard from "./ProductCard";
+import ProductList from "./ProductList";
 
 function RecommendationList({ productId }) {
-    const [recommendations, setRecommendations] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const [products, setProducts] = useState([]);
 
     useEffect(() => {
         async function loadRecommendations() {
             try {
                 const result = await getRecommendations(productId);
 
-                setRecommendations(result.data);
-            } catch (err) {
-                console.error(err);
-            } finally {
-                setLoading(false);
+                setProducts(result.data || []);
+            } catch (error) {
+                console.error(error);
             }
         }
 
-        if (productId) {
-            loadRecommendations();
-        }
+        loadRecommendations();
     }, [productId]);
 
-    if (loading) {
-        return <p>Đang tải gợi ý...</p>;
-    }
+    if (products.length === 0) return null;
 
     return (
-        <>
-            <h2 style={{ marginBottom: "20px" }}>
-                Khách khác cũng mua
+        <div style={{ marginTop: "50px" }}>
+            <h2
+                style={{
+                    color: "#1976d2",
+                    marginBottom: "20px",
+                }}
+            >
+                🛒 Khách khác cũng mua
             </h2>
 
-            {recommendations.length === 0 ? (
-                <p>Chưa có gợi ý.</p>
-            ) : (
-                <div
-                    style={{
-                        display: "grid",
-                        gridTemplateColumns:
-                            "repeat(auto-fill,minmax(220px,1fr))",
-                        gap: "20px",
-                    }}
-                >
-                    {recommendations.map((item) => (
-                        <ProductCard
-                            key={item.id}
-                            product={item}
-                        />
-                    ))}
-                </div>
-            )}
-        </>
+            <ProductList products={products} />
+        </div>
     );
 }
 

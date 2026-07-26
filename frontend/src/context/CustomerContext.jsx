@@ -3,11 +3,9 @@ import { createContext, useState } from "react";
 export const CustomerContext = createContext();
 
 export function CustomerProvider({ children }) {
-
     const [customerId, setCustomerId] = useState("");
 
     return (
-
         <CustomerContext.Provider
             value={{
                 customerId,
@@ -16,7 +14,5 @@ export function CustomerProvider({ children }) {
         >
             {children}
         </CustomerContext.Provider>
-
     );
-
 }
