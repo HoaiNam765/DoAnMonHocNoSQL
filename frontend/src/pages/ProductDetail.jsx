@@ -5,6 +5,7 @@ import { getProductById } from "../services/productService";
 
 import { CustomerContext } from "../context/CustomerContext";
 import RecommendationList from "../components/RecommendationList";
+import ErrorMessage from "../components/ErrorMessage";
 
 function ProductDetail() {
     const { id } = useParams();
@@ -12,24 +13,45 @@ function ProductDetail() {
 
     const [product, setProduct] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+
+    const [retryCount, setRetryCount] = useState(0);
 
     useEffect(() => {
         async function loadProduct() {
             try {
+                setLoading(true);
+                setError(null);
+
                 const result = await getProductById(id, customerId);
                 setProduct(result.data);
-            } catch (error) {
-                console.error(error);
+            } catch (err) {
+                console.error(err);
+                setProduct(null);
+
+                // 404 nghĩa là sản phẩm không tồn tại — đó không phải sự cố hệ
+                // thống nên vẫn hiện thông báo cũ. Các lỗi còn lại (mất kết nối,
+                // 500) mới hiện hộp lỗi kèm nút thử lại.
+                setError(err.status === 404 ? null : err);
             } finally {
                 setLoading(false);
             }
         }
 
         loadProduct();
-    }, [id, customerId]);
+    }, [id, customerId, retryCount]);
 
     if (loading) {
         return <h2>Đang tải...</h2>;
+    }
+
+    if (error) {
+        return (
+            <ErrorMessage
+                error={error}
+                onRetry={() => setRetryCount(retryCount + 1)}
+            />
+        );
     }
 
     if (!product) {

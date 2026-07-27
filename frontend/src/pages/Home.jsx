@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import ProductList from "../components/ProductList";
 import RecommendationSection from "../components/RecommendationSection";
+import ErrorMessage from "../components/ErrorMessage";
 
 import { getProducts } from "../services/productService";
 
@@ -13,25 +14,36 @@ function Home() {
     const [search, setSearch] = useState("");
 
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+
+    // Tăng giá trị này để chạy lại useEffect khi bấm nút "Thử lại"
+    const [retryCount, setRetryCount] = useState(0);
 
     useEffect(() => {
         async function loadProducts() {
             try {
                 setLoading(true);
+                setError(null);
 
                 const result = await getProducts(page, 12, search);
 
                 setProducts(result.data || []);
                 setPagination(result.pagination);
-            } catch (error) {
-                console.error(error);
+            } catch (err) {
+                console.error(err);
+
+                // Không nuốt lỗi: nếu chỉ để products rỗng thì người dùng sẽ
+                // thấy "Không có sản phẩm" và tưởng là tìm không ra kết quả.
+                setError(err);
+                setProducts([]);
+                setPagination(null);
             } finally {
                 setLoading(false);
             }
         }
 
         loadProducts();
-    }, [page, search]);
+    }, [page, search, retryCount]);
 
     return (
         <div>
@@ -65,11 +77,18 @@ function Home() {
 
             {loading ? (
                 <h2>Đang tải...</h2>
+            ) : error ? (
+                <ErrorMessage
+                    error={error}
+                    onRetry={() => setRetryCount(retryCount + 1)}
+                />
             ) : (
                 <>
                     <ProductList products={products} />
 
-                    {pagination && (
+                    {/* Không có kết quả (totalPages = 0) thì ẩn luôn phần phân
+                        trang, tránh hiện "Trang 1 / 0" vô nghĩa. */}
+                    {pagination && pagination.totalPages > 0 && (
                         <div
                             style={{
                                 display: "flex",
@@ -80,7 +99,7 @@ function Home() {
                             }}
                         >
                             <button
-                                disabled={page === 1}
+                                disabled={page <= 1}
                                 onClick={() => setPage(page - 1)}
                             >
                                 ◀ Trước
@@ -92,7 +111,7 @@ function Home() {
                             </span>
 
                             <button
-                                disabled={page === pagination.totalPages}
+                                disabled={page >= pagination.totalPages}
                                 onClick={() => setPage(page + 1)}
                             >
                                 Sau ▶

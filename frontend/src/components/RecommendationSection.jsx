@@ -2,6 +2,7 @@ import { useContext, useEffect, useState } from "react";
 import { CustomerContext } from "../context/CustomerContext";
 import { getCustomerRecommendations } from "../services/customerService";
 import ProductList from "./ProductList";
+import ErrorMessage from "./ErrorMessage";
 
 function RecommendationSection() {
     const { customerId } = useContext(CustomerContext);
@@ -9,6 +10,9 @@ function RecommendationSection() {
     const [products, setProducts] = useState([]);
     const [customerName, setCustomerName] = useState("");
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+
+    const [retryCount, setRetryCount] = useState(0);
 
     useEffect(() => {
         async function loadRecommendations() {
@@ -19,13 +23,15 @@ function RecommendationSection() {
 
             try {
                 setLoading(true);
+                setError(null);
 
                 const result = await getCustomerRecommendations(customerId);
 
                 setProducts(result.data || []);
                 setCustomerName(result.customerName || "");
-            } catch (error) {
-                console.error(error);
+            } catch (err) {
+                console.error(err);
+                setError(err);
                 setProducts([]);
             } finally {
                 setLoading(false);
@@ -33,12 +39,23 @@ function RecommendationSection() {
         }
 
         loadRecommendations();
-    }, [customerId]);
+    }, [customerId, retryCount]);
 
     if (!customerId) return null;
 
     if (loading) {
         return <p>Đang tải gợi ý...</p>;
+    }
+
+    if (error) {
+        return (
+            <div style={{ marginBottom: "50px" }}>
+                <ErrorMessage
+                    error={error}
+                    onRetry={() => setRetryCount(retryCount + 1)}
+                />
+            </div>
+        );
     }
 
     if (products.length === 0) {
