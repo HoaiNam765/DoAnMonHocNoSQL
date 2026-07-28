@@ -1,29 +1,8 @@
-import { useContext, useEffect, useState } from "react";
-import { getCustomers } from "../services/customerService";
-import { CustomerContext } from "../context/CustomerContext";
+import { Link } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 
 function Header() {
-    const [customers, setCustomers] = useState([]);
-
-    const { customerId, setCustomerId } = useContext(CustomerContext);
-
-    useEffect(() => {
-        async function loadCustomers() {
-            try {
-                const result = await getCustomers();
-
-                setCustomers(result.data);
-
-                if (result.data.length > 0 && !customerId) {
-                    setCustomerId(result.data[0].customer_id);
-                }
-            } catch (error) {
-                console.error(error);
-            }
-        }
-
-        loadCustomers();
-    }, []);
+    const { user, customer, logout } = useAuth();
 
     return (
         <header
@@ -36,28 +15,36 @@ function Header() {
                 alignItems: "center",
             }}
         >
-            <h2>🛒 Neo4j Marketplace</h2>
+            <Link to="/" style={{ color: "white", textDecoration: "none" }}>
+                <h2 style={{ margin: 0 }}>🛒 Neo4j Marketplace</h2>
+            </Link>
 
             <div>
-                <strong>Khách hàng: </strong>
-
-                <select
-                    value={customerId}
-                    onChange={(e) => setCustomerId(e.target.value)}
-                    style={{
-                        padding: "8px",
-                        borderRadius: "6px",
-                    }}
-                >
-                    {customers.map((customer) => (
-                        <option
-                            key={customer.customer_id}
-                            value={customer.customer_id}
+                {user ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: "15px" }}>
+                        <span>
+                            Xin chào, <strong>{customer?.customer_name || user.displayName || user.email}</strong>
+                        </span>
+                        <button
+                            onClick={logout}
+                            style={{
+                                padding: "6px 12px",
+                                borderRadius: "4px",
+                                border: "none",
+                                background: "#e53935",
+                                color: "white",
+                                cursor: "pointer",
+                                fontWeight: "bold"
+                            }}
                         >
-                            {customer.customer_name}
-                        </option>
-                    ))}
-                </select>
+                            Đăng xuất
+                        </button>
+                    </div>
+                ) : (
+                    <Link to="/login" style={{ color: "white", textDecoration: "none", fontWeight: "bold", padding: "6px 12px", border: "1px solid white", borderRadius: "4px" }}>
+                        Đăng nhập
+                    </Link>
+                )}
             </div>
         </header>
     );

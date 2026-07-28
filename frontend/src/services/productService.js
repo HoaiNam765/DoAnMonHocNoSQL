@@ -27,13 +27,13 @@ export async function getProducts(page = 1, limit = 12, search = "") {
 
 /**
  * Chi tiết sản phẩm
- * Có thể truyền customerId để backend lưu lịch sử VIEWED
+ * Có thể truyền token để backend xác thực user và lưu lịch sử VIEWED
  */
-export async function getProductById(productId, customerId = null) {
+export async function getProductById(productId, token = null) {
     const headers = {};
 
-    if (customerId) {
-        headers["x-customer-id"] = customerId;
+    if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
     }
 
     const response = await fetch(`${API_URL}/${productId}`, {
@@ -42,6 +42,19 @@ export async function getProductById(productId, customerId = null) {
 
     if (!response.ok) {
         throw httpError("Không lấy được chi tiết sản phẩm", response.status);
+    }
+
+    return response.json();
+}
+
+/**
+ * Lấy danh sách sản phẩm phổ biến
+ */
+export async function getPopularProducts(limit = 8) {
+    const response = await fetch(`${API_URL}/popular?limit=${limit}`);
+
+    if (!response.ok) {
+        throw httpError("Không lấy được danh sách sản phẩm phổ biến", response.status);
     }
 
     return response.json();
