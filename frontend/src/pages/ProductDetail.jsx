@@ -1,19 +1,22 @@
-import { useContext, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useParams, useNavigate } from "react-router-dom";
 
 import { getProductById } from "../services/productService";
+import { buyProduct } from "../services/customerService";
 
-import { CustomerContext } from "../context/CustomerContext";
+import { useAuth } from "../context/AuthContext";
 import RecommendationList from "../components/RecommendationList";
 import ErrorMessage from "../components/ErrorMessage";
 
 function ProductDetail() {
     const { id } = useParams();
-    const { customerId } = useContext(CustomerContext);
+    const navigate = useNavigate();
+    const { user, refreshCustomer } = useAuth();
 
     const [product, setProduct] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [buying, setBuying] = useState(false);
 
     const [retryCount, setRetryCount] = useState(0);
 
@@ -23,7 +26,12 @@ function ProductDetail() {
                 setLoading(true);
                 setError(null);
 
-                const result = await getProductById(id, customerId);
+                let token = null;
+                if (user) {
+                    token = await user.getIdToken();
+                }
+
+                const result = await getProductById(id, token);
                 setProduct(result.data);
             } catch (err) {
                 console.error(err);
@@ -39,7 +47,27 @@ function ProductDetail() {
         }
 
         loadProduct();
-    }, [id, customerId, retryCount]);
+    }, [id, user, retryCount]);
+
+    const handleBuyNow = async () => {
+        if (!user) {
+            navigate("/login");
+            return;
+        }
+
+        try {
+            setBuying(true);
+            const token = await user.getIdToken();
+            await buyProduct(id, token);
+            alert("Mua hàng thành công!");
+            await refreshCustomer();
+        } catch (err) {
+            console.error(err);
+            alert("Lỗi khi mua hàng. Vui lòng thử lại.");
+        } finally {
+            setBuying(false);
+        }
+    };
 
     if (loading) {
         return <h2>Đang tải...</h2>;
@@ -107,6 +135,25 @@ function ProductDetail() {
                     <p>
                         <strong>Đánh giá:</strong> ⭐ {product.rating}
                     </p>
+                    
+                    <button
+                        onClick={handleBuyNow}
+                        disabled={buying}
+                        style={{
+                            marginTop: "20px",
+                            padding: "12px 24px",
+                            background: "#4caf50",
+                            color: "white",
+                            border: "none",
+                            borderRadius: "6px",
+                            fontSize: "16px",
+                            fontWeight: "bold",
+                            cursor: "pointer",
+                            width: "200px"
+                        }}
+                    >
+                        {buying ? "Đang xử lý..." : "🛒 Mua ngay"}
+                    </button>
                 </div>
             </div>
             <hr style={{ margin: "40px 0" }} />

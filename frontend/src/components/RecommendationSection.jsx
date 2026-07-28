@@ -1,34 +1,35 @@
-import { useContext, useEffect, useState } from "react";
-import { CustomerContext } from "../context/CustomerContext";
+import { useEffect, useState } from "react";
+import { useAuth } from "../context/AuthContext";
 import { getCustomerRecommendations } from "../services/customerService";
+import { getPopularProducts } from "../services/productService";
 import ProductList from "./ProductList";
 import ErrorMessage from "./ErrorMessage";
 
 function RecommendationSection() {
-    const { customerId } = useContext(CustomerContext);
+    const { customer } = useAuth();
 
     const [products, setProducts] = useState([]);
-    const [customerName, setCustomerName] = useState("");
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [isColdStart, setIsColdStart] = useState(false);
 
     const [retryCount, setRetryCount] = useState(0);
 
     useEffect(() => {
         async function loadRecommendations() {
-            if (!customerId) {
-                setProducts([]);
-                return;
-            }
-
             try {
                 setLoading(true);
                 setError(null);
 
-                const result = await getCustomerRecommendations(customerId);
-
-                setProducts(result.data || []);
-                setCustomerName(result.customerName || "");
+                if (!customer || !customer.bought_count || customer.bought_count === 0) {
+                    setIsColdStart(true);
+                    const result = await getPopularProducts(8);
+                    setProducts(result.data || []);
+                } else {
+                    setIsColdStart(false);
+                    const result = await getCustomerRecommendations(customer.customer_id);
+                    setProducts(result.data || []);
+                }
             } catch (err) {
                 console.error(err);
                 setError(err);
@@ -39,9 +40,7 @@ function RecommendationSection() {
         }
 
         loadRecommendations();
-    }, [customerId, retryCount]);
-
-    if (!customerId) return null;
+    }, [customer, retryCount]);
 
     if (loading) {
         return <p>Đang tải gợi ý...</p>;
@@ -66,16 +65,22 @@ function RecommendationSection() {
         <div style={{ marginBottom: "50px" }}>
             <h2
                 style={{
-                    color: "#1976d2",
-                    marginBottom: "10px",
+                    color: isColdStart ? "#e53935" : "#1976d2",
+                    marginBottom: "5px",
                 }}
             >
-                🎯 Gợi ý dành cho bạn
+                {isColdStart ? "🔥 Sản phẩm bán chạy" : "🎯 Gợi ý dành cho bạn"}
             </h2>
 
-            <p style={{ color: "#666" }}>
-                Xin chào <strong>{customerName}</strong>
-            </p>
+            {isColdStart ? (
+                <p style={{ color: "#666", marginBottom: "20px" }}>
+                    Mua sản phẩm đầu tiên để nhận gợi ý riêng cho bạn
+                </p>
+            ) : (
+                <p style={{ color: "#666", marginBottom: "20px" }}>
+                    Xin chào <strong>{customer.customer_name}</strong>
+                </p>
+            )}
 
             <ProductList products={products} />
 
