@@ -9,6 +9,7 @@ const {
   parseSearch,
   buildPagination,
 } = require('../utils/http');
+const { optionalAuth } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -43,24 +44,50 @@ router.get(
 );
 
 /**
- * Task 2.2 + Task 2.5 — GET /api/products/:id
+ * Task A6 — GET /api/products/popular
+ * Sản phẩm phổ biến (Query C — đếm lượt mua).
+ * Phục vụ cold-start: tài khoản mới chưa có lịch sử mua.
+ * Public, không cần token.
+ * Query params: limit (mặc định 8, tối đa 50)
+ */
+const MAX_POPULAR = 50;
+
+router.get(
+  '/popular',
+  asyncHandler(async (req, res) => {
+    const limit = Math.min(Math.max(1, parseInt(req.query.limit, 10) || 8), MAX_POPULAR);
+
+    const rows = await readQuery(q.POPULAR_PRODUCTS, { limit: int(limit) });
+
+    res.json({
+      source: 'popularity', // Query C: đếm cạnh BOUGHT, không duyệt sâu đồ thị
+      count: rows.length,
+      data: rows,
+    });
+  })
+);
+
+/**
+ * Task 2.2 + Task 2.5 + Task A8 — GET /api/products/:id
  * Chi tiết 1 sản phẩm, kèm tên danh mục.
  *
- * Task 2.5: Nếu header `x-customer-id` có giá trị (do frontend gửi khi đã
- * chọn khách hàng trong dropdown "đăng nhập giả lập"), backend sẽ tự động
- * ghi nhận hành vi VIEWED bằng MERGE — không tạo trùng nếu đã xem trước đó.
- * Khách vãng lai (chưa chọn khách) thì chỉ trả dữ liệu sản phẩm bình thường.
+ * Ghi nhận hành vi VIEWED:
+ * - Ưu tiên 1: user đăng nhập (token) → customerId = 'U_' + uid
+ * - Ưu tiên 2: header x-customer-id (tương thích ngược với frontend cũ)
+ * - Không có cả hai → chỉ đọc, không ghi VIEWED
  */
 router.get(
   '/:id',
+  optionalAuth,
   asyncHandler(async (req, res) => {
     const productId = String(req.params.id);
 
-    // TODO(security): Trong hệ thống thực, customerId phải lấy từ session/JWT
-    // đã xác thực. Ở đây dùng header giả lập cho mục đích đồ án.
-    const customerId = req.headers['x-customer-id']
-      ? String(req.headers['x-customer-id']).trim()
-      : null;
+    // Ưu tiên user đã đăng nhập (từ Firebase token), fallback sang header cũ
+    const customerId = req.user
+      ? `U_${req.user.uid}`
+      : req.headers['x-customer-id']
+        ? String(req.headers['x-customer-id']).trim()
+        : null;
 
     let rows;
     if (customerId) {

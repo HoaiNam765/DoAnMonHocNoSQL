@@ -168,6 +168,100 @@ RETURN p.id            AS id,
        count { (:Customer)-[:VIEWED]->(p) }  AS viewed_count
 `;
 
+// ---------------------------------------------------------------------------
+// Task A4 — Đồng bộ user từ Firebase vào Neo4j
+// ---------------------------------------------------------------------------
+
+/**
+ * MERGE node Customer theo customer_id = 'U_' + firebase_uid.
+ * - ON CREATE: tạo mới với firebase_uid, tên, email, ngày tạo.
+ * - ON MATCH: chỉ cập nhật tên và email (cho phép user đổi tên trên Firebase).
+ * - Trả về thông tin kèm bought_count để frontend biết ngay trạng thái cold-start.
+ * Idempotent: gọi bao nhiêu lần cũng chỉ tạo 1 node.
+ */
+const SYNC_CUSTOMER = `
+MERGE (c:Customer {customer_id: $customerId})
+ON CREATE SET c.firebase_uid  = $firebaseUid,
+              c.customer_name = $customerName,
+              c.email         = $email,
+              c.created_at    = datetime()
+ON MATCH  SET c.customer_name = $customerName,
+              c.email         = $email
+RETURN c.customer_id   AS customer_id,
+       c.customer_name AS customer_name,
+       c.email         AS email,
+       count { (c)-[:BOUGHT]->(:Product) } AS bought_count
+`;
+
+// ---------------------------------------------------------------------------
+// Task A5 — Lấy thông tin user đã sync theo firebase_uid
+// ---------------------------------------------------------------------------
+
+/**
+ * Tra cứu node Customer theo firebase_uid (lấy từ token đã verify).
+ * Nếu không tìm thấy → route handler trả 404 (chưa gọi /sync).
+ */
+const GET_CUSTOMER_BY_FIREBASE_UID = `
+MATCH (c:Customer {firebase_uid: $firebaseUid})
+RETURN c.customer_id   AS customer_id,
+       c.customer_name AS customer_name,
+       c.email         AS email,
+       count { (c)-[:BOUGHT]->(:Product) } AS bought_count
+`;
+
+// ---------------------------------------------------------------------------
+// Task A6 — Query C: Sản phẩm phổ biến (đếm lượt mua)
+// ---------------------------------------------------------------------------
+
+/**
+ * QUERY C — đếm số khách hàng đã mua mỗi sản phẩm, sắp xếp theo độ phổ biến.
+ * Phục vụ tài khoản mới chưa có lịch sử mua (cold-start).
+ * Khác với Query A/B: không duyệt sâu đồ thị, chỉ đếm cạnh BOUGHT trực tiếp.
+ */
+const POPULAR_PRODUCTS = `
+MATCH (p:Product)<-[:BOUGHT]-(c:Customer)
+WITH p, count(DISTINCT c) AS score
+OPTIONAL MATCH (p)-[:BELONGS_TO]->(cat:Category)
+RETURN p.id             AS id,
+       p.title          AS title,
+       p.final_price    AS final_price,
+       p.rating         AS rating,
+       p.image          AS image,
+       cat.category_name AS category_name,
+       score
+ORDER BY score DESC, coalesce(p.rating, 0) DESC, p.id ASC
+LIMIT $limit
+`;
+
+// ---------------------------------------------------------------------------
+// Task A7 — Mua hàng: tạo quan hệ BOUGHT
+// ---------------------------------------------------------------------------
+
+/**
+ * MERGE quan hệ BOUGHT giữa Customer và Product.
+ * - MERGE chống trùng: mua lại cùng sản phẩm không tạo thêm cạnh.
+ * - SET rating_stars = 5 (mặc định), bought_at = thời điểm mua.
+ * - Trả về customer_id, product_id và tổng bought_count sau khi mua.
+ */
+const BUY_PRODUCT = `
+MATCH (c:Customer {customer_id: $customerId})
+MATCH (p:Product {id: $productId})
+MERGE (c)-[b:BOUGHT]->(p)
+ON CREATE SET b.rating_stars = 5,
+              b.bought_at    = datetime()
+RETURN c.customer_id AS customer_id,
+       p.id          AS product_id,
+       count { (c)-[:BOUGHT]->(:Product) } AS bought_count
+`;
+
+/**
+ * Kiểm tra sản phẩm có tồn tại không (dùng trước khi tạo BOUGHT).
+ */
+const CHECK_PRODUCT_EXISTS = `
+MATCH (p:Product {id: $productId})
+RETURN p.id AS id
+`;
+
 module.exports = {
   COUNT_PRODUCTS,
   LIST_PRODUCTS,
@@ -178,4 +272,9 @@ module.exports = {
   RECOMMEND_FOR_CUSTOMER,
   RECOMMEND_FOR_PRODUCT,
   RECORD_VIEWED_AND_GET_PRODUCT,
+  SYNC_CUSTOMER,
+  GET_CUSTOMER_BY_FIREBASE_UID,
+  POPULAR_PRODUCTS,
+  BUY_PRODUCT,
+  CHECK_PRODUCT_EXISTS,
 };

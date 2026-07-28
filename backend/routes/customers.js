@@ -1,6 +1,6 @@
 const express = require('express');
 
-const { readQuery, int } = require('../db');
+const { readQuery, writeQuery, int } = require('../db');
 const q = require('../queries/cypher');
 const {
   asyncHandler,
@@ -9,6 +9,7 @@ const {
   parseSearch,
   buildPagination,
 } = require('../utils/http');
+const { verifyToken } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -37,6 +38,36 @@ router.get(
       data: rows,
       pagination: buildPagination(page, limit, total),
     });
+  })
+);
+
+/**
+ * Task A7 — POST /api/customers/me/buy/:productId
+ * Mua sản phẩm — tạo quan hệ BOUGHT giữa Customer và Product.
+ * - Bắt buộc verifyToken: customer_id lấy từ token, không lấy từ URL.
+ * - MERGE chống trùng: mua lại cùng sản phẩm không tạo thêm cạnh.
+ * - Sản phẩm không tồn tại → 404.
+ */
+router.post(
+  '/me/buy/:productId',
+  verifyToken,
+  asyncHandler(async (req, res) => {
+    const customerId = `U_${req.user.uid}`;
+    const productId = String(req.params.productId);
+
+    // Kiểm tra sản phẩm có tồn tại không
+    const product = await readQuery(q.CHECK_PRODUCT_EXISTS, { productId });
+    if (product.length === 0) {
+      throw new HttpError(404, `Không tìm thấy sản phẩm có id = ${productId}`);
+    }
+
+    const rows = await writeQuery(q.BUY_PRODUCT, { customerId, productId });
+
+    if (rows.length === 0) {
+      throw new HttpError(404, 'Không tìm thấy khách hàng. Gọi POST /api/auth/sync trước.');
+    }
+
+    res.json({ data: rows[0] });
   })
 );
 
