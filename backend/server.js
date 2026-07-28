@@ -5,6 +5,7 @@ require('dotenv').config();
 const { verifyConnection, closeDriver } = require('./db');
 const productRoutes = require('./routes/products');
 const customerRoutes = require('./routes/customers');
+const authRoutes = require('./routes/auth');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -19,16 +20,21 @@ app.get('/', (req, res) => {
     status: 'success',
     message: 'Welcome to Fullstack Express & Neo4j API Server',
     endpoints: [
-      'GET /api/products?page=&limit=&search=',
-      'GET /api/products/:id',
-      'GET /api/products/:id/recommendations?limit=',
-      'GET /api/customers?page=&limit=&search=',
-      'GET /api/customers/:id',
-      'GET /api/customers/:id/recommendations?limit=',
+      'GET  /api/products?page=&limit=&search=',
+      'GET  /api/products/popular?limit=',
+      'GET  /api/products/:id',
+      'GET  /api/products/:id/recommendations?limit=',
+      'GET  /api/customers?page=&limit=&search=',
+      'GET  /api/customers/:id',
+      'GET  /api/customers/:id/recommendations?limit=',
+      'POST /api/auth/sync',
+      'GET  /api/auth/me',
+      'POST /api/customers/me/buy/:productId',
     ],
   });
 });
 
+app.use('/api/auth', authRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/customers', customerRoutes);
 
