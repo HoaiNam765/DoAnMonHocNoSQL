@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { syncUser } from "../services/authService";
 
 function Login() {
     const { login, loginWithGoogle } = useAuth();
@@ -26,15 +27,21 @@ function Login() {
         }
     };
 
+    const navigateAfterLogin = async (userCredential) => {
+        const token = await userCredential.user.getIdToken();
+        const result = await syncUser(token);
+        navigate(result.data?.role === "admin" ? "/admin" : "/");
+    };
+
     const handleLogin = async (e) => {
         e.preventDefault();
         try {
             setError("");
             setLoading(true);
-            await login(email, password);
-            navigate("/");
+            const userCredential = await login(email, password);
+            await navigateAfterLogin(userCredential);
         } catch (err) {
-            setError(getFriendlyErrorMessage(err.code));
+            setError(err.status === 403 ? "Tài khoản chưa được cấp quyền Admin." : getFriendlyErrorMessage(err.code));
         } finally {
             setLoading(false);
         }
@@ -44,11 +51,11 @@ function Login() {
         try {
             setError("");
             setLoading(true);
-            await loginWithGoogle();
-            navigate("/");
+            const userCredential = await loginWithGoogle();
+            await navigateAfterLogin(userCredential);
         } catch (err) {
             if (err.code !== "auth/popup-closed-by-user") {
-                setError(getFriendlyErrorMessage(err.code));
+                setError(err.status === 403 ? "Tài khoản chưa được cấp quyền Admin." : getFriendlyErrorMessage(err.code));
             }
         } finally {
             setLoading(false);

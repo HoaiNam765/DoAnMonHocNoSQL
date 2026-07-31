@@ -187,9 +187,12 @@ ON CREATE SET c.firebase_uid  = $firebaseUid,
               c.created_at    = datetime()
 ON MATCH  SET c.customer_name = $customerName,
               c.email         = $email
+WITH c
+OPTIONAL MATCH (c)-[:HAS_ROLE]->(r:Role)
 RETURN c.customer_id   AS customer_id,
        c.customer_name AS customer_name,
        c.email         AS email,
+       coalesce(r.role_name, c.role, 'user') AS role,
        count { (c)-[:BOUGHT]->(:Product) } AS bought_count
 `;
 
@@ -203,9 +206,11 @@ RETURN c.customer_id   AS customer_id,
  */
 const GET_CUSTOMER_BY_FIREBASE_UID = `
 MATCH (c:Customer {firebase_uid: $firebaseUid})
+OPTIONAL MATCH (c)-[:HAS_ROLE]->(r:Role)
 RETURN c.customer_id   AS customer_id,
        c.customer_name AS customer_name,
        c.email         AS email,
+       coalesce(r.role_name, c.role, 'user') AS role,
        count { (c)-[:BOUGHT]->(:Product) } AS bought_count
 `;
 
@@ -262,6 +267,191 @@ MATCH (p:Product {id: $productId})
 RETURN p.id AS id
 `;
 
+// ---------------------------------------------------------------------------
+// Task Admin — Các câu truy vấn Cypher dành riêng cho Admin Management
+// ---------------------------------------------------------------------------
+
+/** Thống kê tổng quan hệ thống cho Admin Dashboard. */
+const ADMIN_GET_STATS = `
+MATCH (p:Product) WITH count(p) AS total_products
+MATCH (c:Customer) WITH total_products, count(c) AS total_customers
+MATCH (cat:Category) WITH total_products, total_customers, count(cat) AS total_categories
+OPTIONAL MATCH (:Customer)-[b:BOUGHT]->(p:Product)
+WITH total_products, total_customers, total_categories, count(b) AS total_orders, sum(p.final_price) AS total_revenue
+RETURN total_products, total_customers, total_categories, total_orders, coalesce(total_revenue, 0) AS total_revenue
+`;
+
+/** Thống kê doanh thu & sản phẩm bán theo từng danh mục. */
+const ADMIN_REVENUE_BY_CATEGORY = `
+MATCH (cat:Category)<-[:BELONGS_TO]-(p:Product)
+OPTIONAL MATCH (c:Customer)-[b:BOUGHT]->(p)
+WITH cat, count(b) AS sold_count, sum(p.final_price) AS category_revenue, count(DISTINCT p) AS product_count
+RETURN cat.category_id AS category_id,
+       cat.category_name AS category_name,
+       product_count,
+       sold_count,
+       coalesce(category_revenue, 0) AS revenue
+ORDER BY revenue DESC, sold_count DESC
+`;
+
+/** 10 giao dịch / lượt mua mới nhất trong hệ thống. */
+const ADMIN_RECENT_ORDERS = `
+MATCH (c:Customer)-[b:BOUGHT]->(p:Product)
+OPTIONAL MATCH (p)-[:BELONGS_TO]->(cat:Category)
+RETURN c.customer_id AS customer_id,
+       c.customer_name AS customer_name,
+       p.id AS product_id,
+       p.title AS product_title,
+       p.final_price AS final_price,
+       p.image AS image,
+       cat.category_name AS category_name,
+       coalesce(b.bought_at, datetime()) AS bought_at
+ORDER BY bought_at DESC
+LIMIT 10
+`;
+
+/** Danh sách tất cả danh mục cùng số lượng sản phẩm. */
+const ADMIN_LIST_CATEGORIES = `
+MATCH (cat:Category)
+OPTIONAL MATCH (p:Product)-[:BELONGS_TO]->(cat)
+RETURN cat.category_id AS category_id,
+       cat.category_name AS category_name,
+       coalesce(cat.status, 'active') AS status,
+       count(p) AS product_count
+ORDER BY cat.category_name ASC
+`;
+
+/** Tạo danh mục sản phẩm mới. */
+const ADMIN_CREATE_CATEGORY = `
+MERGE (cat:Category {category_id: $categoryId})
+ON CREATE SET cat.category_name = $categoryName, cat.status = 'active'
+RETURN cat.category_id AS category_id, cat.category_name AS category_name, cat.status AS status
+`;
+
+/** Cập nhật tên / trạng thái danh mục. */
+const ADMIN_UPDATE_CATEGORY = `
+MATCH (cat:Category {category_id: $categoryId})
+SET cat.category_name = $categoryName, cat.status = $status
+RETURN cat.category_id AS category_id, cat.category_name AS category_name, cat.status AS status
+`;
+
+/** Ẩn / Xóa danh mục. */
+const ADMIN_DELETE_CATEGORY = `
+MATCH (cat:Category {category_id: $categoryId})
+SET cat.status = 'hidden'
+RETURN cat.category_id AS category_id, cat.status AS status
+`;
+
+/** Tạo sản phẩm mới kèm liên kết với danh mục. */
+const ADMIN_CREATE_PRODUCT = `
+CREATE (p:Product {
+  id: $id,
+  title: $title,
+  final_price: $finalPrice,
+  rating: $rating,
+  image: $image,
+  stock: $stock,
+  status: 'active'
+})
+WITH p
+MATCH (cat:Category {category_id: $categoryId})
+MERGE (p)-[:BELONGS_TO]->(cat)
+RETURN p.id AS id, p.title AS title, p.final_price AS final_price, p.rating AS rating, p.image AS image, cat.category_id AS category_id, cat.category_name AS category_name
+`;
+
+/** Cập nhật thông tin sản phẩm. */
+const ADMIN_UPDATE_PRODUCT = `
+MATCH (p:Product {id: $id})
+SET p.title = $title,
+    p.final_price = $finalPrice,
+    p.rating = $rating,
+    p.image = $image,
+    p.stock = $stock,
+    p.status = $status
+WITH p
+OPTIONAL MATCH (p)-[r:BELONGS_TO]->(:Category)
+DELETE r
+WITH p
+MATCH (cat:Category {category_id: $categoryId})
+MERGE (p)-[:BELONGS_TO]->(cat)
+RETURN p.id AS id, p.title AS title, p.final_price AS final_price, p.rating AS rating, p.image AS image, cat.category_id AS category_id, cat.category_name AS category_name
+`;
+
+/** Đổi trạng thái sản phẩm sang deleted. */
+const ADMIN_DELETE_PRODUCT = `
+MATCH (p:Product {id: $id})
+SET p.status = 'deleted'
+RETURN p.id AS id, p.status AS status
+`;
+
+/** Danh sách người dùng quản lý. */
+const ADMIN_LIST_USERS = `
+MATCH (c:Customer)
+WHERE $search = ''
+   OR toLower(c.customer_name) CONTAINS $search
+   OR toLower(c.customer_id) CONTAINS $search
+   OR toLower(coalesce(c.email, '')) CONTAINS $search
+OPTIONAL MATCH (c)-[:HAS_ROLE]->(r:Role)
+OPTIONAL MATCH (c)-[:BOUGHT]->(p:Product)
+WITH c, r, count(p) AS bought_count
+RETURN c.customer_id AS customer_id,
+       c.customer_name AS customer_name,
+       c.email AS email,
+       c.firebase_uid AS firebase_uid,
+       coalesce(r.role_name, c.role, 'user') AS role,
+       coalesce(c.status, 'active') AS status,
+       bought_count,
+       c.created_at AS created_at
+ORDER BY CASE WHEN c.email IS NOT NULL AND trim(c.email) <> '' THEN 1 ELSE 0 END DESC, bought_count DESC, c.customer_id ASC
+SKIP $skip LIMIT $limit
+`;
+
+/** Đếm tổng số người dùng quản lý. */
+const ADMIN_COUNT_USERS = `
+MATCH (c:Customer)
+WHERE $search = ''
+   OR toLower(c.customer_name) CONTAINS $search
+   OR toLower(c.customer_id) CONTAINS $search
+   OR toLower(coalesce(c.email, '')) CONTAINS $search
+RETURN count(c) AS total
+`;
+
+/** Chi tiết thông tin + lịch sử hoạt động của người dùng. */
+const ADMIN_GET_USER_DETAILS = `
+MATCH (c:Customer {customer_id: $customerId})
+OPTIONAL MATCH (c)-[:HAS_ROLE]->(r:Role)
+OPTIONAL MATCH (c)-[b:BOUGHT]->(bp:Product)
+OPTIONAL MATCH (c)-[v:VIEWED]->(vp:Product)
+RETURN c.customer_id AS customer_id,
+       c.customer_name AS customer_name,
+       c.email AS email,
+       c.firebase_uid AS firebase_uid,
+       coalesce(r.role_name, c.role, 'user') AS role,
+       coalesce(c.status, 'active') AS status,
+       c.created_at AS created_at,
+       collect(DISTINCT { id: bp.id, title: bp.title, price: bp.final_price, image: bp.image, bought_at: b.bought_at })[..10] AS bought_products,
+       collect(DISTINCT { id: vp.id, title: vp.title, price: vp.final_price, image: vp.image, viewed_at: v.last_viewed_at })[..10] AS viewed_products
+`;
+
+/** Cập nhật vai trò người dùng (admin / user) thông qua node (:Role) và quan hệ [:HAS_ROLE]. */
+const ADMIN_UPDATE_USER_ROLE = `
+MATCH (c:Customer {customer_id: $customerId})
+OPTIONAL MATCH (c)-[oldRel:HAS_ROLE]->(:Role)
+DELETE oldRel
+WITH c
+MERGE (r:Role {role_name: $role})
+MERGE (c)-[:HAS_ROLE]->(r)
+SET c.role = $role
+RETURN c.customer_id AS customer_id, r.role_name AS role
+`;
+
+/** Cập nhật trạng thái người dùng (active / blocked). */
+const ADMIN_UPDATE_USER_STATUS = `
+MATCH (c:Customer {customer_id: $customerId})
+SET c.status = $status
+RETURN c.customer_id AS customer_id, c.status AS status
+`;
+
 module.exports = {
   COUNT_PRODUCTS,
   LIST_PRODUCTS,
@@ -277,4 +467,19 @@ module.exports = {
   POPULAR_PRODUCTS,
   BUY_PRODUCT,
   CHECK_PRODUCT_EXISTS,
+  ADMIN_GET_STATS,
+  ADMIN_REVENUE_BY_CATEGORY,
+  ADMIN_RECENT_ORDERS,
+  ADMIN_LIST_CATEGORIES,
+  ADMIN_CREATE_CATEGORY,
+  ADMIN_UPDATE_CATEGORY,
+  ADMIN_DELETE_CATEGORY,
+  ADMIN_CREATE_PRODUCT,
+  ADMIN_UPDATE_PRODUCT,
+  ADMIN_DELETE_PRODUCT,
+  ADMIN_LIST_USERS,
+  ADMIN_COUNT_USERS,
+  ADMIN_GET_USER_DETAILS,
+  ADMIN_UPDATE_USER_ROLE,
+  ADMIN_UPDATE_USER_STATUS,
 };

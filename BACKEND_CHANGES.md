@@ -171,3 +171,82 @@
 2. **Cài `firebase-admin`**: `npm install firebase-admin` (nếu chưa cài)
 3. File `firebase-service-account.json` phải nằm tại `backend/` — tải từ Firebase Console
 4. Các endpoint public cũ **không thay đổi hành vi** — test cũ 34/34 phải vẫn pass
+
+---
+
+# Bổ sung — Admin Management Dashboard
+
+> **Ngày thực hiện:** 31/07/2026
+> **Phạm vi:** Phân quyền Admin và API quản lý hệ thống
+
+## 1. Middleware kiểm tra quyền Admin
+
+**File tạo mới:**
+- `backend/middleware/adminAuth.js`
+
+Middleware `requireAdmin` thực hiện tuần tự:
+1. Dùng lại `verifyToken` để xác thực Firebase ID Token.
+2. Lấy `firebase_uid` từ token đã xác thực, không tin dữ liệu do client gửi lên.
+3. Tra cứu Customer tương ứng trong Neo4j.
+4. Kiểm tra role từ `HAS_ROLE -> Role` hoặc thuộc tính `c.role`.
+5. Trả lỗi phù hợp: `401` nếu token không hợp lệ, `404` nếu tài khoản chưa sync, `403` nếu không có role `admin`.
+
+Toàn bộ route trong `backend/routes/admin.js` dùng middleware này ở cấp router, nên các API quản trị đều được bảo vệ.
+
+## 2. Script cấp quyền Admin
+
+**File tạo mới:**
+- `backend/scripts/setup-admin.js`
+
+Script cho phép cấp role Admin theo email, `customer_id` hoặc `firebase_uid`.
+
+```bash
+cd backend
+npm run setup:admin -- admin@example.com
+```
+
+Script dùng query `ADMIN_UPDATE_USER_ROLE`, tạo/cập nhật node `Role { role_name: 'admin' }` và quan hệ `HAS_ROLE` với Customer tương ứng.
+
+## 3. API Admin
+
+**File tạo mới:**
+- `backend/routes/admin.js`
+
+Router được mount tại `/api/admin` trong `backend/server.js`.
+
+| Method | Endpoint | Mô tả |
+|---|---|---|
+| `GET` | `/api/admin/stats` | Tổng sản phẩm, khách hàng, danh mục, lượt mua, doanh thu và giao dịch gần nhất |
+| `GET` | `/api/admin/categories` | Danh sách danh mục kèm số lượng sản phẩm |
+| `POST` | `/api/admin/categories` | Tạo danh mục mới |
+| `PUT` | `/api/admin/categories/:id` | Cập nhật tên/trạng thái danh mục |
+| `DELETE` | `/api/admin/categories/:id` | Ẩn danh mục |
+| `GET` | `/api/admin/products` | Danh sách sản phẩm có tìm kiếm, lọc và phân trang |
+| `POST` | `/api/admin/products` | Tạo sản phẩm mới |
+| `PUT` | `/api/admin/products/:id` | Cập nhật tên, giá, rating, ảnh, tồn kho và danh mục |
+| `DELETE` | `/api/admin/products/:id` | Đánh dấu sản phẩm `deleted` |
+| `GET` | `/api/admin/users` | Danh sách người dùng có tìm kiếm và phân trang |
+| `GET` | `/api/admin/users/:id` | Chi tiết người dùng và lịch sử mua/xem |
+| `PUT` | `/api/admin/users/:id/role` | Đổi role `admin` hoặc `user` |
+| `PUT` | `/api/admin/users/:id/status` | Khóa/mở khóa tài khoản |
+
+## 4. Cypher dành cho Admin
+
+**File cập nhật:**
+- `backend/queries/cypher.js`
+
+Đã bổ sung các query tập trung trong một file theo quy ước dự án:
+- `ADMIN_GET_STATS`, `ADMIN_REVENUE_BY_CATEGORY`, `ADMIN_RECENT_ORDERS`.
+- `ADMIN_LIST_CATEGORIES`, `ADMIN_CREATE_CATEGORY`, `ADMIN_UPDATE_CATEGORY`, `ADMIN_DELETE_CATEGORY`.
+- `ADMIN_CREATE_PRODUCT`, `ADMIN_UPDATE_PRODUCT`, `ADMIN_DELETE_PRODUCT`.
+- `ADMIN_LIST_USERS`, `ADMIN_COUNT_USERS`, `ADMIN_GET_USER_DETAILS`.
+- `ADMIN_UPDATE_USER_ROLE`, `ADMIN_UPDATE_USER_STATUS`.
+
+Các query đều dùng tham số Cypher, không ghép trực tiếp dữ liệu người dùng vào câu lệnh.
+
+## 5. Xác nhận triển khai
+
+- Backend đã mount router tại `/api/admin`.
+- Endpoint gốc `/` đã liệt kê nhóm Admin endpoints.
+- Các endpoint Admin không làm thay đổi hành vi các API public cũ.
+- Frontend production build thành công sau khi tích hợp Admin Dashboard.

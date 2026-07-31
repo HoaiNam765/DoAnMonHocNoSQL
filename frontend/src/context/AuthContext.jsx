@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import {
     createUserWithEmailAndPassword,
     signInWithEmailAndPassword,
@@ -40,16 +40,18 @@ export function AuthProvider({ children }) {
     }, []);
 
     // Hàm làm mới thông tin customer từ backend (cần thiết khi vừa bấm mua hàng)
-    const refreshCustomer = async () => {
-        if (!user) return;
+    const refreshCustomer = useCallback(async () => {
+        if (!user) return null;
         try {
             const token = await user.getIdToken(true);
             const result = await syncUser(token);
             setCustomer(result.data);
+            return result.data;
         } catch (error) {
             console.error("Lỗi cập nhật lại customer:", error);
+            throw error;
         }
-    };
+    }, [user]);
 
     const register = async (email, password, displayName) => {
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);

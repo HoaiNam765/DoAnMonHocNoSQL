@@ -10,7 +10,8 @@
     "import": "node scripts/import.js",
     "test:api": "node scripts/test-api.js",
     "explain": "node scripts/explain-profile.js",
-    "setup:auth": "node scripts/setup-auth.js"
+    "setup:auth": "node scripts/setup-auth.js",
+    "setup:admin": "node scripts/setup-admin.js"
   },
   "keywords": [],
   "author": "",
