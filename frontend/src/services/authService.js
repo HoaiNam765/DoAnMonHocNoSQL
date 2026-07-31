@@ -27,3 +27,16 @@ export async function syncUser(token) {
 
     return response.json();
 }
+
+export async function getCurrentCustomer(token) {
+    const response = await fetch(`${API_URL}/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw httpError(body.message || "Không thể lấy thông tin tài khoản", response.status);
+    }
+
+    return response.json();
+}

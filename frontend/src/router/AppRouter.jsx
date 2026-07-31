@@ -10,6 +10,7 @@ import Home from "../pages/Home";
 import ProductDetail from "../pages/ProductDetail";
 import Login from "../pages/Login";
 import Register from "../pages/Register";
+import AdminDashboard from "../pages/admin/AdminDashboard";
 
 function AppRouter() {
     return (
@@ -17,6 +18,7 @@ function AppRouter() {
             <Routes>
                 <Route path="/login" element={<Login />} />
                 <Route path="/register" element={<Register />} />
+                <Route path="/admin" element={<AdminDashboard />} />
 
                 <Route element={<MainLayout />}>
 

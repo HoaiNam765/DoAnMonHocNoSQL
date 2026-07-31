@@ -6,6 +6,7 @@ const { verifyConnection, closeDriver } = require('./db');
 const productRoutes = require('./routes/products');
 const customerRoutes = require('./routes/customers');
 const authRoutes = require('./routes/auth');
+const adminRoutes = require('./routes/admin');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -30,6 +31,7 @@ app.get('/', (req, res) => {
       'POST /api/auth/sync',
       'GET  /api/auth/me',
       'POST /api/customers/me/buy/:productId',
+      'ADMIN endpoints at /api/admin/*',
     ],
   });
 });
@@ -37,6 +39,7 @@ app.get('/', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/customers', customerRoutes);
+app.use('/api/admin', adminRoutes);
 
 // 404 cho các đường dẫn không khớp route nào
 app.use((req, res) => {
