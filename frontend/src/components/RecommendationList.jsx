@@ -9,7 +9,6 @@ function RecommendationList({ productId }) {
         async function loadRecommendations() {
             try {
                 const result = await getRecommendations(productId);
-
                 setProducts(result.data || []);
             } catch (error) {
                 console.error(error);
@@ -22,16 +21,8 @@ function RecommendationList({ productId }) {
     if (products.length === 0) return null;
 
     return (
-        <div style={{ marginTop: "50px" }}>
-            <h2
-                style={{
-                    color: "#1976d2",
-                    marginBottom: "20px",
-                }}
-            >
-                🛒 Khách khác cũng mua
-            </h2>
-
+        <div style={{ marginTop: "40px" }}>
+            <h2 className="recommend-section__title">🛒 Khách khác cũng mua</h2>
             <ProductList products={products} />
         </div>
     );

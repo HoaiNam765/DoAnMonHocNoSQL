@@ -10,6 +10,7 @@ import {
     getAdminProducts, createProduct, updateProduct, deleteProduct,
     getAdminUsers, getUserDetails, updateUserRole, updateUserStatus,
 } from "../../services/adminService";
+import AdminOrders from "./AdminOrders";
 import "./AdminDashboard.css";
 
 const money = (value) => `${Number(value || 0).toLocaleString("vi-VN")} đ`;
@@ -32,6 +33,7 @@ function AdminDashboard() {
     const [form, setForm] = useState(emptyProduct);
     const [selectedUser, setSelectedUser] = useState(null);
     const [checkingAccess, setCheckingAccess] = useState(true);
+    const [statsRefreshKey, setStatsRefreshKey] = useState(0);
 
     useEffect(() => {
         if (authLoading) return;
@@ -90,7 +92,7 @@ function AdminDashboard() {
         };
         load();
         return () => { cancelled = true; };
-    }, [token, section, page, search]);
+    }, [token, section, page, search, statsRefreshKey]);
 
     if (authLoading || checkingAccess) return <Loading />;
     if (!user) return <Navigate to="/login" replace />;
@@ -133,6 +135,7 @@ function AdminDashboard() {
                 {busy ? <Loading /> : (
                     <>
                         {section === "overview" && <Overview stats={stats} onNavigate={changeSection} />}
+                        {section === "orders" && <AdminOrders onOrderChanged={() => setStatsRefreshKey((value) => value + 1)} />}
                         {section === "categories" && <Categories categories={categories} onAdd={() => openCategory()} onEdit={openCategory} onDelete={(id) => archive("category", id)} />}
                         {section === "products" && <Products products={products} categories={categories} search={search} setSearch={setSearch} page={page} setPage={setPage} onAdd={() => openProduct()} onEdit={openProduct} onDelete={(id) => archive("product", id)} />}
                         {section === "users" && <Users users={users} search={search} setSearch={setSearch} page={page} setPage={setPage} onView={openUser} onRole={async (id, role) => { await updateUserRole(token, id, role); setUsers(await getAdminUsers(token, { page, limit: 8, search })); }} onStatus={async (id, status) => { await updateUserStatus(token, id, status); setUsers(await getAdminUsers(token, { page, limit: 8, search })); }} />}
@@ -148,7 +151,31 @@ function AdminDashboard() {
 
 function Overview({ stats, onNavigate }) {
     const summary = stats?.summary || {};
-    return <section className="admin-content"><div className="welcome-band"><div><span className="eyebrow">REAL-TIME SNAPSHOT</span><h2>Nhịp vận hành hôm nay</h2><p>Theo dõi sức khỏe cửa hàng và những chuyển động mới nhất.</p></div><button className="primary-button" onClick={() => onNavigate("products")}>Quản lý kho <span>→</span></button></div><div className="stats-grid"><AdminStatCard label="Doanh thu ghi nhận" value={money(summary.total_revenue)} note="Tổng từ các giao dịch BOUGHT" accent="orange" /><AdminStatCard label="Tổng lượt mua" value={Number(summary.total_orders || 0).toLocaleString("vi-VN")} note="Đơn hàng trong đồ thị" accent="green" /><AdminStatCard label="Khách hàng" value={Number(summary.total_customers || 0).toLocaleString("vi-VN")} note="Tài khoản đang theo dõi" accent="blue" /><AdminStatCard label="Sản phẩm" value={Number(summary.total_products || 0).toLocaleString("vi-VN")} note={`${summary.total_categories || 0} danh mục đang dùng`} accent="violet" /></div><div className="overview-grid"><section className="panel"><div className="panel-heading"><div><span className="eyebrow">PERFORMANCE</span><h3>Doanh thu theo danh mục</h3></div><span className="muted">Xếp theo doanh thu</span></div><div className="revenue-list">{(stats?.categoryRevenue || []).slice(0, 7).map((item, index) => <div className="revenue-row" key={item.category_id}><span className="rank">0{index + 1}</span><div className="revenue-name"><strong>{item.category_name}</strong><span>{item.sold_count || 0} lượt mua</span></div><div className="bar-track"><i style={{ width: `${Math.min(100, ((item.revenue || 0) / Math.max(1, stats.categoryRevenue[0]?.revenue || 1)) * 100)}%` }} /></div><b>{money(item.revenue)}</b></div>)}</div></section><section className="panel"><div className="panel-heading"><div><span className="eyebrow">LATEST ACTIVITY</span><h3>Lượt mua gần nhất</h3></div></div><div className="activity-list">{(stats?.recentOrders || []).slice(0, 5).map((order) => <div className="activity-row" key={`${order.customer_id}-${order.product_id}-${order.bought_at}`}><span className="activity-avatar">{(order.customer_name || "K").slice(0, 1)}</span><div><strong>{order.customer_name || order.customer_id}</strong><span>{order.product_title}</span></div><b>{money(order.final_price)}</b></div>)}</div></section></div></section>;
+    const revenueSeries = stats?.revenueByPeriod || [];
+
+    const chartPoints = (() => {
+        if (!revenueSeries.length) return "";
+        const width = 320;
+        const height = 160;
+        const maxValue = Math.max(...revenueSeries.map((item) => Number(item.revenue || 0)), 1);
+        const stepX = width / Math.max(revenueSeries.length - 1, 1);
+        return revenueSeries.map((item, index) => {
+            const value = Number(item.revenue || 0);
+            const x = index * stepX;
+            const y = height - (value / maxValue) * (height - 20) - 10;
+            return `${x},${y}`;
+        }).join(" ");
+    })();
+
+    const areaPath = (() => {
+        if (!chartPoints) return "";
+        const points = chartPoints.split(" ").map((point) => point.split(",").map(Number));
+        const height = 160;
+        const line = points.map(([x, y], index) => `${index === 0 ? "M" : "L"}${x} ${y}`).join(" ");
+        return `${line} L${points[points.length - 1][0]} ${height} L${points[0][0]} ${height} Z`;
+    })();
+
+    return <section className="admin-content"><div className="welcome-band"><div><span className="eyebrow">REAL-TIME SNAPSHOT</span><h2>Nhịp vận hành hôm nay</h2><p>Theo dõi sức khỏe cửa hàng và những chuyển động mới nhất.</p></div><button className="primary-button" onClick={() => onNavigate("products")}>Quản lý kho <span>→</span></button></div><div className="stats-grid"><AdminStatCard label="Doanh thu ghi nhận" value={money(summary.total_revenue)} note="Tổng từ các giao dịch BOUGHT" accent="orange" /><AdminStatCard label="Tổng lượt mua" value={Number(summary.total_orders || 0).toLocaleString("vi-VN")} note="Đơn hàng trong đồ thị" accent="blue" /><AdminStatCard label="Khách hàng" value={Number(summary.total_customers || 0).toLocaleString("vi-VN")} note="Tài khoản đang theo dõi" accent="blue" /><AdminStatCard label="Sản phẩm" value={Number(summary.total_products || 0).toLocaleString("vi-VN")} note={`${summary.total_categories || 0} danh mục đang dùng`} accent="violet" /></div><section className="panel chart-panel"><div className="panel-heading"><div><span className="eyebrow">TREND</span><h3>Doanh thu theo thời gian</h3></div><span className="muted">Biểu đồ theo tháng</span></div>{revenueSeries.length ? <div className="revenue-chart"><svg viewBox="0 0 320 160" role="img" aria-label="Doanh thu theo thời gian"><path className="chart-area" d={areaPath} /><polyline className="chart-line" points={chartPoints} /><g>{revenueSeries.map((item, index) => { const value = Number(item.revenue || 0); const width = 320; const height = 160; const maxValue = Math.max(...revenueSeries.map((entry) => Number(entry.revenue || 0)), 1); const stepX = width / Math.max(revenueSeries.length - 1, 1); const x = index * stepX; const y = height - (value / maxValue) * (height - 20) - 10; return <circle key={item.period} className="chart-point" cx={x} cy={y} r="4" />; })}</g></svg><div className="chart-labels">{revenueSeries.map((item) => <span key={item.period}>{item.period}</span>)}</div></div> : <div className="chart-empty">Chưa có dữ liệu doanh thu để hiển thị.</div>}</section><div className="overview-grid"><section className="panel"><div className="panel-heading"><div><span className="eyebrow">PERFORMANCE</span><h3>Doanh thu theo danh mục</h3></div><span className="muted">Xếp theo doanh thu</span></div><div className="revenue-list">{(stats?.categoryRevenue || []).slice(0, 7).map((item, index) => <div className="revenue-row" key={item.category_id}><span className="rank">0{index + 1}</span><div className="revenue-name"><strong>{item.category_name}</strong><span>{item.sold_count || 0} lượt mua</span></div><div className="bar-track"><i style={{ width: `${Math.min(100, ((item.revenue || 0) / Math.max(1, stats.categoryRevenue[0]?.revenue || 1)) * 100)}%` }} /></div><b>{money(item.revenue)}</b></div>)}</div></section><section className="panel"><div className="panel-heading"><div><span className="eyebrow">LATEST ACTIVITY</span><h3>Lượt mua gần nhất</h3></div></div><div className="activity-list">{(stats?.recentOrders || []).slice(0, 5).map((order) => <div className="activity-row" key={`${order.customer_id}-${order.product_id}-${order.bought_at}`}><span className="activity-avatar">{(order.customer_name || "K").slice(0, 1)}</span><div><strong>{order.customer_name || order.customer_id}</strong><span>{order.product_title}</span></div><b>{money(order.final_price)}</b></div>)}</div></section></div></section>;
 }
 
 function SearchBar({ value, onChange, placeholder }) { return <div className="search-box"><span>⌕</span><input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} /></div>; }

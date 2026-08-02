@@ -1,5 +1,6 @@
 const sections = [
     { id: "overview", label: "Tổng quan", icon: "◈" },
+    { id: "orders", label: "Đơn hàng", icon: "◫" },
     { id: "products", label: "Sản phẩm", icon: "▦" },
     { id: "categories", label: "Danh mục", icon: "⌘" },
     { id: "users", label: "Người dùng", icon: "◎" },

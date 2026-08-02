@@ -28,92 +28,37 @@ function ProductCard({ product }) {
     };
 
     return (
-        <div
-            style={{
-                background: "#fff",
-                borderRadius: "10px",
-                overflow: "hidden",
-                boxShadow: "0 2px 8px rgba(0,0,0,.1)",
-                transition: ".2s",
-            }}
-        >
-            <img
-                src={product.image}
-                alt={product.title}
-                style={{
-                    width: "100%",
-                    height: "200px",
-                    objectFit: "cover",
-                }}
-            />
+        <div className="product-card">
+            <img className="product-card__image" src={product.image} alt={product.title} />
 
-            <div style={{ padding: "15px" }}>
-                <h3
-                    style={{
-                        fontSize: "18px",
-                        height: "48px",
-                        overflow: "hidden",
-                    }}
-                >
+            <div className="product-card__body">
+                <h3 className="product-card__title" title={product.title}>
                     {product.title}
                 </h3>
 
-                <p
-                    style={{
-                        color: "#e53935",
-                        fontWeight: "bold",
-                        margin: "10px 0",
-                    }}
-                >
+                <div className="product-card__price">
                     {Number(product.final_price).toLocaleString("vi-VN")} đ
-                </p>
+                </div>
 
-                <p
-                    style={{
-                        color: "#666",
-                        fontSize: "14px",
-                    }}
-                >
-                    {product.category_name}
-                </p>
+                <div className="product-card__meta">
+                    {product.category_name || "Danh mục"}
+                </div>
 
-                <p>⭐ {product.rating}</p>
+                <div className="product-card__rating">★ {Number(product.rating || 0).toFixed(1)}</div>
 
-                <Link to={`/product/${product.id}`}>
+                <div className="product-card__actions">
+                    <Link to={`/product/${product.id}`}>
+                        <button className="product-card__button">Xem chi tiết</button>
+                    </Link>
+
                     <button
-                        style={{
-                            width: "100%",
-                            marginTop: "10px",
-                            padding: "10px",
-                            border: "none",
-                            borderRadius: "5px",
-                            cursor: "pointer",
-                            background: "#1976d2",
-                            color: "white",
-                        }}
+                        className={`product-card__button--secondary ${added ? "is-added" : ""}`}
+                        onClick={handleAddToCart}
+                        disabled={adding}
                     >
-                        Xem chi tiết
+                        {added ? "✓ Đã thêm" : adding ? "Đang thêm..." : "🛒 Thêm vào giỏ"}
                     </button>
-                </Link>
-
-                <button
-                    onClick={handleAddToCart}
-                    disabled={adding}
-                    style={{
-                        width: "100%",
-                        marginTop: "8px",
-                        padding: "10px",
-                        border: "1px solid #2e7d32",
-                        borderRadius: "5px",
-                        cursor: adding ? "default" : "pointer",
-                        background: added ? "#2e7d32" : "white",
-                        color: added ? "white" : "#2e7d32",
-                        fontWeight: "bold",
-                        transition: "background .2s, color .2s",
-                    }}
-                >
-                    {added ? "✓ Đã thêm" : adding ? "Đang thêm..." : "🛒 Thêm vào giỏ"}
-                </button>
+                </div>
             </div>
         </div>
     );
