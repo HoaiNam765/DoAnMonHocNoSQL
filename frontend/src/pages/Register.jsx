@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { getFriendlyErrorMessage } from "../utils/authErrors";
 
 function Register() {
     const { register } = useAuth();
@@ -14,18 +15,6 @@ function Register() {
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
 
-    const getFriendlyErrorMessage = (code) => {
-        switch (code) {
-            case "auth/email-already-in-use":
-                return "Email này đã được đăng ký.";
-            case "auth/invalid-email":
-                return "Email không hợp lệ.";
-            case "auth/weak-password":
-                return "Mật khẩu quá yếu, vui lòng nhập ít nhất 6 ký tự.";
-            default:
-                return "Đăng ký thất bại. Vui lòng thử lại.";
-        }
-    };
 
     const handleRegister = async (e) => {
         e.preventDefault();
@@ -40,7 +29,8 @@ function Register() {
             await register(email, password, displayName);
             navigate("/");
         } catch (err) {
-            setError(getFriendlyErrorMessage(err.code));
+            console.error("[Register]:", err.code, err);
+            setError(getFriendlyErrorMessage(err));
         } finally {
             setLoading(false);
         }

@@ -90,11 +90,24 @@ const get = async (path) => {
   r = await get('/api/customers?limit=10');
   check('status 200', r.status === 200, `nhận ${r.status}`);
   check('trả đúng 10 khách', r.body?.data?.length === 10, `nhận ${r.body?.data?.length}`);
-  check('tổng 3539 khách', r.body?.pagination?.total === 3539, `nhận ${r.body?.pagination?.total}`);
   check(
     'có customer_id + customer_name',
     ['customer_id', 'customer_name'].every((k) => k in (r.body?.data?.[0] ?? {}))
   );
+
+  // Từ khi có đăng nhập (task A4), mỗi tài khoản đăng ký sinh thêm 1 node
+  // Customer, nên tổng số khách chỉ tăng chứ không còn cố định ở 3539.
+  // Không thể tách 2 nhóm bằng search 'U_' vì nhiều khách import có tên chứa
+  // 'u_' (ví dụ 'haru_st', '_vunhu_'), nên chỉ kiểm tra dữ liệu gốc chưa bị mất.
+  const totalCustomers = r.body?.pagination?.total ?? 0;
+  check(
+    'còn đủ 3539 khách hàng import gốc',
+    totalCustomers >= 3539,
+    `chỉ còn ${totalCustomers} — dữ liệu import có thể đã bị xoá, chạy lại npm run import`
+  );
+  if (totalCustomers > 3539) {
+    console.log(`     (thêm ${totalCustomers - 3539} tài khoản đăng ký qua Firebase)`);
+  }
 
   const sampleCustomer = r.body?.data?.[0];
 

@@ -11,7 +11,8 @@
     "test:api": "node scripts/test-api.js",
     "explain": "node scripts/explain-profile.js",
     "setup:auth": "node scripts/setup-auth.js",
-    "setup:admin": "node scripts/setup-admin.js"
+    "setup:admin": "node scripts/setup-admin.js",
+    "test:shop": "node scripts/test-shop.js"
   },
   "keywords": [],
   "author": "",

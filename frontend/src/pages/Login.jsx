@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { syncUser } from "../services/authService";
+import { getFriendlyErrorMessage, SILENT_CODES } from "../utils/authErrors";
 
 function Login() {
     const { login, loginWithGoogle } = useAuth();
@@ -11,21 +12,6 @@ function Login() {
     const [password, setPassword] = useState("");
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
-
-    const getFriendlyErrorMessage = (code) => {
-        switch (code) {
-            case "auth/invalid-credential":
-            case "auth/user-not-found":
-            case "auth/wrong-password":
-                return "Email hoặc mật khẩu không đúng.";
-            case "auth/invalid-email":
-                return "Email không hợp lệ.";
-            case "auth/too-many-requests":
-                return "Tài khoản tạm thời bị khóa do đăng nhập sai quá nhiều. Vui lòng thử lại sau.";
-            default:
-                return "Đăng nhập thất bại. Vui lòng thử lại.";
-        }
-    };
 
     const navigateAfterLogin = async (userCredential) => {
         const token = await userCredential.user.getIdToken();
@@ -41,7 +27,8 @@ function Login() {
             const userCredential = await login(email, password);
             await navigateAfterLogin(userCredential);
         } catch (err) {
-            setError(err.status === 403 ? "Tài khoản chưa được cấp quyền Admin." : getFriendlyErrorMessage(err.code));
+            console.error("[Login] email/password:", err.code, err);
+            setError(getFriendlyErrorMessage(err));
         } finally {
             setLoading(false);
         }
@@ -54,8 +41,9 @@ function Login() {
             const userCredential = await loginWithGoogle();
             await navigateAfterLogin(userCredential);
         } catch (err) {
-            if (err.code !== "auth/popup-closed-by-user") {
-                setError(err.status === 403 ? "Tài khoản chưa được cấp quyền Admin." : getFriendlyErrorMessage(err.code));
+            console.error("[Login] Google:", err.code, err);
+            if (!SILENT_CODES.includes(err.code)) {
+                setError(getFriendlyErrorMessage(err));
             }
         } finally {
             setLoading(false);

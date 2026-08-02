@@ -5,6 +5,7 @@
 const express = require('express');
 const { readQuery, writeQuery, int } = require('../db');
 const q = require('../queries/cypher');
+const shopQ = require('../queries/shopCypher');
 const { asyncHandler, HttpError, parsePagination, buildPagination } = require('../utils/http');
 const { requireAdmin } = require('../middleware/adminAuth');
 
@@ -278,6 +279,98 @@ router.put(
     if (rows.length === 0) {
       throw new HttpError(404, 'Không tìm thấy người dùng');
     }
+
+    res.json({ status: 'success', data: rows[0] });
+  })
+);
+
+// ---------------------------------------------------------------------------
+// QUẢN LÝ ĐƠN HÀNG
+//
+// Đây là nơi nhân viên xử lý luồng thanh toán tại cửa hàng:
+//   khách đặt đơn trên web → đơn hiện ở đây với trạng thái "Chờ thanh toán"
+//   → khách tới trả tiền → nhân viên bấm "Đã thanh toán"
+//   → hệ thống sinh cạnh BOUGHT → gợi ý cập nhật ngay
+// ---------------------------------------------------------------------------
+
+const ORDER_STATUSES = ['PENDING', 'PAID', 'COMPLETED', 'CANCELLED'];
+
+/** GET /api/admin/orders?status=&page=&limit= — danh sách toàn bộ đơn */
+router.get(
+  '/orders',
+  asyncHandler(async (req, res) => {
+    const { page, limit, skip } = parsePagination(req.query, { defaultLimit: 20, maxLimit: 100 });
+    const status = String(req.query.status ?? '').trim().toUpperCase();
+
+    if (status && !ORDER_STATUSES.includes(status)) {
+      throw new HttpError(400, `status phải là một trong: ${ORDER_STATUSES.join(', ')}`);
+    }
+
+    const [countRows, rows] = await Promise.all([
+      readQuery(shopQ.ADMIN_ORDER_COUNT, { status }),
+      readQuery(shopQ.ADMIN_ORDER_LIST, { status, skip: int(skip), limit: int(limit) }),
+    ]);
+
+    res.json({
+      status: 'success',
+      data: rows,
+      pagination: buildPagination(page, limit, countRows[0]?.total ?? 0),
+    });
+  })
+);
+
+/** GET /api/admin/orders/:orderId — chi tiết đơn (admin xem được mọi đơn) */
+router.get(
+  '/orders/:orderId',
+  asyncHandler(async (req, res) => {
+    const rows = await readQuery(shopQ.ORDER_GET_DETAIL, { orderId: String(req.params.orderId) });
+    if (rows.length === 0) throw new HttpError(404, 'Không tìm thấy đơn hàng');
+    res.json({ status: 'success', data: rows[0] });
+  })
+);
+
+/**
+ * POST /api/admin/orders/:orderId/mark-paid
+ * Xác nhận khách đã trả tiền tại cửa hàng → sinh cạnh BOUGHT.
+ */
+router.post(
+  '/orders/:orderId/mark-paid',
+  asyncHandler(async (req, res) => {
+    const orderId = String(req.params.orderId);
+    const paidNote = String(req.body?.note ?? '').trim() || null;
+
+    const rows = await writeQuery(shopQ.ORDER_MARK_PAID, { orderId, paidNote });
+
+    if (rows.length === 0) {
+      // Phân biệt "không có đơn" với "đơn không còn ở trạng thái chờ thanh toán"
+      const found = await readQuery(shopQ.ORDER_FIND_PENDING, { orderId });
+      if (found.length === 0) throw new HttpError(404, 'Không tìm thấy đơn hàng');
+      throw new HttpError(400, `Đơn đang ở trạng thái ${found[0].status}, không phải PENDING`);
+    }
+
+    res.json({ status: 'success', data: rows[0] });
+  })
+);
+
+/** PUT /api/admin/orders/:orderId/status — đổi trạng thái (COMPLETED / CANCELLED) */
+router.put(
+  '/orders/:orderId/status',
+  asyncHandler(async (req, res) => {
+    const status = String(req.body?.status ?? '').trim().toUpperCase();
+
+    if (!ORDER_STATUSES.includes(status)) {
+      throw new HttpError(400, `status phải là một trong: ${ORDER_STATUSES.join(', ')}`);
+    }
+    if (status === 'PAID') {
+      throw new HttpError(400, 'Dùng POST /orders/:orderId/mark-paid để xác nhận thanh toán');
+    }
+
+    const rows = await writeQuery(shopQ.ORDER_UPDATE_STATUS, {
+      orderId: String(req.params.orderId),
+      status,
+    });
+
+    if (rows.length === 0) throw new HttpError(404, 'Không tìm thấy đơn hàng');
 
     res.json({ status: 'success', data: rows[0] });
   })

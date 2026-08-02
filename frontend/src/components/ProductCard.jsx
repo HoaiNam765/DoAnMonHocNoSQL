@@ -1,6 +1,32 @@
-import { Link } from "react-router-dom";
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
+import { useCart } from "../context/CartContext";
 
 function ProductCard({ product }) {
+    const { user } = useAuth();
+    const { addItem } = useCart();
+    const navigate = useNavigate();
+
+    const [adding, setAdding] = useState(false);
+    const [added, setAdded] = useState(false);
+
+    const handleAddToCart = async () => {
+        if (!user) return navigate("/login");
+
+        try {
+            setAdding(true);
+            await addItem(product.id, 1);
+            setAdded(true);
+            setTimeout(() => setAdded(false), 1500);
+        } catch (err) {
+            console.error(err);
+            alert(err.message || "Không thêm được vào giỏ hàng.");
+        } finally {
+            setAdding(false);
+        }
+    };
+
     return (
         <div
             style={{
@@ -69,6 +95,25 @@ function ProductCard({ product }) {
                         Xem chi tiết
                     </button>
                 </Link>
+
+                <button
+                    onClick={handleAddToCart}
+                    disabled={adding}
+                    style={{
+                        width: "100%",
+                        marginTop: "8px",
+                        padding: "10px",
+                        border: "1px solid #2e7d32",
+                        borderRadius: "5px",
+                        cursor: adding ? "default" : "pointer",
+                        background: added ? "#2e7d32" : "white",
+                        color: added ? "white" : "#2e7d32",
+                        fontWeight: "bold",
+                        transition: "background .2s, color .2s",
+                    }}
+                >
+                    {added ? "✓ Đã thêm" : adding ? "Đang thêm..." : "🛒 Thêm vào giỏ"}
+                </button>
             </div>
         </div>
     );

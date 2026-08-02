@@ -2,6 +2,7 @@ const express = require('express');
 
 const { readQuery, writeQuery, int } = require('../db');
 const q = require('../queries/cypher');
+const shopQ = require('../queries/shopCypher');
 const {
   asyncHandler,
   HttpError,
@@ -66,6 +67,54 @@ router.post(
     if (rows.length === 0) {
       throw new HttpError(404, 'Không tìm thấy khách hàng. Gọi POST /api/auth/sync trước.');
     }
+
+    res.json({ data: rows[0] });
+  })
+);
+
+/**
+ * GET /api/customers/me/profile — hồ sơ của chính mình + số liệu tổng hợp.
+ *
+ * PHẢI khai báo trước route '/:id' bên dưới, nếu không Express sẽ khớp
+ * '/me/profile' vào '/:id' với id = "me".
+ */
+router.get(
+  '/me/profile',
+  verifyToken,
+  asyncHandler(async (req, res) => {
+    const rows = await readQuery(shopQ.CUSTOMER_GET_PROFILE, {
+      customerId: `U_${req.user.uid}`,
+    });
+
+    if (rows.length === 0) {
+      throw new HttpError(404, 'Chưa có hồ sơ. Gọi POST /api/auth/sync trước.');
+    }
+
+    res.json({ data: rows[0] });
+  })
+);
+
+/** PATCH /api/customers/me/profile — cập nhật tên, số điện thoại, địa chỉ */
+router.patch(
+  '/me/profile',
+  verifyToken,
+  asyncHandler(async (req, res) => {
+    const { customerName, phone, address } = req.body ?? {};
+
+    const clean = (v) => {
+      if (v === undefined || v === null) return null;
+      const s = String(v).trim();
+      return s === '' ? null : s;
+    };
+
+    const rows = await writeQuery(shopQ.CUSTOMER_UPDATE_PROFILE, {
+      customerId: `U_${req.user.uid}`,
+      customerName: clean(customerName),
+      phone: clean(phone),
+      address: clean(address),
+    });
+
+    if (rows.length === 0) throw new HttpError(404, 'Không tìm thấy khách hàng');
 
     res.json({ data: rows[0] });
   })

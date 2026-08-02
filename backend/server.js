@@ -7,6 +7,8 @@ const productRoutes = require('./routes/products');
 const customerRoutes = require('./routes/customers');
 const authRoutes = require('./routes/auth');
 const adminRoutes = require('./routes/admin');
+const cartRoutes = require('./routes/cart');
+const orderRoutes = require('./routes/orders');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -31,6 +33,18 @@ app.get('/', (req, res) => {
       'POST /api/auth/sync',
       'GET  /api/auth/me',
       'POST /api/customers/me/buy/:productId',
+      'GET    /api/customers/me/profile',
+      'PATCH  /api/customers/me/profile',
+      'GET    /api/cart',
+      'POST   /api/cart/items',
+      'PATCH  /api/cart/items/:productId',
+      'DELETE /api/cart/items/:productId',
+      'POST   /api/orders',
+      'GET    /api/orders',
+      'GET    /api/orders/:orderId',
+      'POST   /api/orders/:orderId/cancel',
+      'GET    /api/admin/orders?status=',
+      'POST   /api/admin/orders/:orderId/mark-paid',
       'ADMIN endpoints at /api/admin/*',
     ],
   });
@@ -39,6 +53,8 @@ app.get('/', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/customers', customerRoutes);
+app.use('/api/cart', cartRoutes);
+app.use('/api/orders', orderRoutes);
 app.use('/api/admin', adminRoutes);
 
 // 404 cho các đường dẫn không khớp route nào
@@ -70,8 +86,8 @@ const startServer = async () => {
     console.error('   và chắc chắn instance Aura không ở trạng thái paused.');
   }
 
-  const server = app.listen(PORT, () => {
-    console.log(`🚀 [Server] Đang chạy tại http://localhost:${PORT}`);
+  const server = app.listen(PORT, "0.0.0.0", () => {
+    console.log(`🚀 [Server] Đang chạy tại http://0.0.0.0:${PORT}`);
   });
 
   // Graceful shutdown
