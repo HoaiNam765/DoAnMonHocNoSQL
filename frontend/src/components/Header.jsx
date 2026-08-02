@@ -4,14 +4,12 @@ import { getCustomers } from "../services/customerService";
 
 function Header() {
     const [customers, setCustomers] = useState([]);
-
     const { customerId, setCustomerId } = useContext(CustomerContext);
 
     useEffect(() => {
         async function loadCustomers() {
             try {
                 const result = await getCustomers();
-
                 setCustomers(result.data);
 
                 if (result.data.length > 0 && !customerId) {
@@ -26,36 +24,24 @@ function Header() {
     }, []);
 
     return (
-        <header
-            style={{
-                background: "#1976d2",
-                color: "white",
-                padding: "18px 40px",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-            }}
-        >
-            <h2>Neo4j E-Commerce</h2>
+        <header className="topbar">
+            <div className="topbar__brand">
+                <div className="topbar__brand-mark">N</div>
+                <div>
+                    <div>Neo4j Commerce</div>
+                    <small style={{ opacity: 0.75, fontSize: "0.8rem" }}>Cửa hàng thông minh</small>
+                </div>
+            </div>
 
-            <div>
-                <strong>Khách hàng: </strong>
-
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <strong>Khách hàng:</strong>
                 <select
+                    className="topbar__select"
                     value={customerId}
                     onChange={(e) => setCustomerId(e.target.value)}
-                    style={{
-                        padding: "8px 12px",
-                        borderRadius: "6px",
-                        border: "none",
-                        outline: "none",
-                    }}
                 >
                     {customers.map((customer) => (
-                        <option
-                            key={customer.customer_id}
-                            value={customer.customer_id}
-                        >
+                        <option key={customer.customer_id} value={customer.customer_id}>
                             {customer.customer_name}
                         </option>
                     ))}

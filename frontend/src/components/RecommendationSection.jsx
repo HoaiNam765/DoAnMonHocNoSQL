@@ -43,16 +43,13 @@ function RecommendationSection() {
     }, [customer, retryCount]);
 
     if (loading) {
-        return <p>Đang tải gợi ý...</p>;
+        return <p className="section-subtitle">Đang tải gợi ý...</p>;
     }
 
     if (error) {
         return (
-            <div style={{ marginBottom: "50px" }}>
-                <ErrorMessage
-                    error={error}
-                    onRetry={() => setRetryCount(retryCount + 1)}
-                />
+            <div className="recommend-section">
+                <ErrorMessage error={error} onRetry={() => setRetryCount(retryCount + 1)} />
             </div>
         );
     }
@@ -62,30 +59,23 @@ function RecommendationSection() {
     }
 
     return (
-        <div style={{ marginBottom: "50px" }}>
-            <h2
-                style={{
-                    color: isColdStart ? "#e53935" : "#1976d2",
-                    marginBottom: "5px",
-                }}
-            >
+        <section className="recommend-section">
+            <h2 className="recommend-section__title">
                 {isColdStart ? "🔥 Sản phẩm bán chạy" : "🎯 Gợi ý dành cho bạn"}
             </h2>
 
             {isColdStart ? (
-                <p style={{ color: "#666", marginBottom: "20px" }}>
-                    Mua sản phẩm đầu tiên để nhận gợi ý riêng cho bạn
+                <p className="recommend-section__subtitle">
+                    Mua sản phẩm đầu tiên để nhận gợi ý riêng cho bạn.
                 </p>
             ) : (
-                <p style={{ color: "#666", marginBottom: "20px" }}>
-                    Xin chào <strong>{customer.customer_name}</strong>
+                <p className="recommend-section__subtitle">
+                    Xin chào <strong>{customer.customer_name}</strong> — đây là những mục phù hợp nhất với nhu cầu của bạn.
                 </p>
             )}
 
             <ProductList products={products} />
-
-            <hr style={{ marginTop: "40px" }} />
-        </div>
+        </section>
     );
 }
 

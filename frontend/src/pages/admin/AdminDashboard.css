@@ -2,15 +2,15 @@
 
 :root{
 
-    --primary:#d5f36b;
-    --dark:#17251f;
-    --bg:#f4f5f0;
+    --primary:#2563eb;
+    --dark:#0f172a;
+    --bg:#f4f7fb;
 
     --card:#ffffff;
 
-    --text:#19231f;
+    --text:#172033;
 
-    --muted:#91a49a;
+    --muted:#64748b;
 
     --radius:12px;
 
@@ -26,8 +26,8 @@
 .admin-shell {
     min-height: 100vh;
     display: flex;
-    background: #f4f5f0;
-    color: #19231f;
+    background: linear-gradient(135deg, #f8fbff 0%, #eef4ff 100%);
+    color: #172033;
     font-family: "Manrope", sans-serif;
 }
 
@@ -38,7 +38,7 @@
 .admin-sidebar {
     width: 248px;
     flex: 0 0 248px;
-    background: #17251f;
+    background: #0f172a;
     color: #e7eee8;
     padding: 28px 16px 18px;
     display: flex;
@@ -59,8 +59,8 @@
     height: 35px;
     display: grid;
     place-items: center;
-    background: #d5f36b;
-    color: #17251f;
+    background: var(--primary);
+    color: white;
     border-radius: 9px;
     font-size: 20px;
     font-weight: 800;
@@ -121,7 +121,7 @@
 }
 
 .admin-nav-item.active {
-    box-shadow: inset 3px 0 #d5f36b;
+    box-shadow: inset 3px 0 var(--primary);
 }
 
 /* ---------- Sidebar Footer ---------- */
@@ -231,7 +231,7 @@
 
     padding: 29px 31px;
 
-    background: #385246;
+    background: linear-gradient(135deg, #1d4ed8 0%, #0f172a 100%);
     color: #eef4e8;
 
     border-radius: 12px;
@@ -280,8 +280,8 @@
     border: 0;
     border-radius: 7px;
 
-    background: #d5f36b;
-    color: #26341f;
+    background: var(--primary);
+    color: white;
 
     font-weight: 800;
 
@@ -307,13 +307,65 @@
     margin: 15px 0 28px;
 }
 
+.chart-panel {
+    margin-bottom: 18px;
+}
+
+.revenue-chart {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.revenue-chart svg {
+    width: 100%;
+    height: 220px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #f8fbff 0%, #eef5ff 100%);
+    padding: 8px;
+}
+
+.chart-area {
+    fill: rgba(37, 99, 235, 0.16);
+}
+
+.chart-line {
+    fill: none;
+    stroke: var(--primary);
+    stroke-width: 3;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.chart-point {
+    fill: #ffffff;
+    stroke: var(--primary);
+    stroke-width: 2;
+}
+
+.chart-labels {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    color: #64748b;
+    font-size: 12px;
+}
+
+.chart-empty {
+    padding: 18px;
+    border-radius: 10px;
+    background: #f8fbff;
+    color: #64748b;
+    text-align: center;
+}
+
 .admin-stat-card {
     padding: 20px;
 
     background: #ffffff;
 
     border-radius: 10px;
-    border-top: 3px solid #d5f36b;
+    border-top: 3px solid var(--primary);
 
     box-shadow: 0 4px 18px #263d3210;
 }
@@ -323,11 +375,11 @@
 }
 
 .admin-stat-card.green {
-    border-color: #72bd96;
+    border-color: var(--primary);
 }
 
 .admin-stat-card.blue {
-    border-color: #7ca6db;
+    border-color: var(--primary);
 }
 
 .admin-stat-card.violet {
