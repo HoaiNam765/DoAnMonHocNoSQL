@@ -26,3 +26,9 @@ dist-ssr
 # Firebase service account key — KHÔNG commit lên git
 firebase-service-account.json
 backend/firebase-service-account.json
+# Environment variables — KHÔNG commit lên git
+.env
+*.env
+backend/.env
+
+back/.env.example
