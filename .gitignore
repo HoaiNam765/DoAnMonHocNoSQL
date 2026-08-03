@@ -31,4 +31,4 @@ backend/firebase-service-account.json
 *.env
 backend/.env
 
-back/.env.example
+backend/.env.example
