@@ -2,6 +2,7 @@ const express = require('express');
 
 const { readQuery, writeQuery, int } = require('../db');
 const q = require('../queries/shopCypher');
+const stockQ = require('../queries/adminStatsCypher');
 const { CHECK_PRODUCT_EXISTS } = require('../queries/cypher');
 const { asyncHandler, HttpError } = require('../utils/http');
 const { verifyToken } = require('../middleware/auth');
@@ -76,6 +77,20 @@ router.post(
       throw new HttpError(404, `Không tìm thấy sản phẩm có id = ${productId}`);
     }
 
+    // Không cho bỏ vào giỏ nhiều hơn tồn kho. Phải cộng cả phần đã có sẵn
+    // trong giỏ vì endpoint này cộng dồn số lượng.
+    const [stockRow] = await readQuery(stockQ.GET_PRODUCT_STOCK, { productId, customerId });
+    const stock = stockRow?.stock ?? 0;
+    const inCart = stockRow?.in_cart ?? 0;
+
+    if (stock === 0) throw new HttpError(409, 'Sản phẩm đã hết hàng');
+    if (inCart + quantity > stock) {
+      throw new HttpError(
+        409,
+        `Chỉ còn ${stock} sản phẩm trong kho` + (inCart > 0 ? ` (giỏ của bạn đã có ${inCart})` : '')
+      );
+    }
+
     const rows = await writeQuery(q.CART_ADD_ITEM, { customerId, productId, quantity: int(quantity) });
     if (rows.length === 0) {
       throw new HttpError(404, 'Không tìm thấy khách hàng. Gọi POST /api/auth/sync trước.');
@@ -92,6 +107,12 @@ router.patch(
     const customerId = customerIdOf(req);
     const productId = String(req.params.productId);
     const quantity = parseQuantity(req.body?.quantity, { allowZero: true });
+
+    if (quantity > 0) {
+      const [stockRow] = await readQuery(stockQ.GET_PRODUCT_STOCK, { productId, customerId });
+      const stock = stockRow?.stock ?? 0;
+      if (quantity > stock) throw new HttpError(409, `Chỉ còn ${stock} sản phẩm trong kho`);
+    }
 
     const rows =
       quantity === 0

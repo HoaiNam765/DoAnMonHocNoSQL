@@ -5,7 +5,7 @@ import { syncUser } from "../services/authService";
 import { getFriendlyErrorMessage, SILENT_CODES } from "../utils/authErrors";
 
 function Login() {
-    const { login, loginWithGoogle } = useAuth();
+    const { login, loginWithGoogle, blockedMessage, clearBlockedMessage } = useAuth();
     const navigate = useNavigate();
 
     const [email, setEmail] = useState("");
@@ -23,6 +23,7 @@ function Login() {
         e.preventDefault();
         try {
             setError("");
+            clearBlockedMessage();
             setLoading(true);
             const userCredential = await login(email, password);
             await navigateAfterLogin(userCredential);
@@ -37,6 +38,7 @@ function Login() {
     const handleGoogleLogin = async () => {
         try {
             setError("");
+            clearBlockedMessage();
             setLoading(true);
             const userCredential = await loginWithGoogle();
             await navigateAfterLogin(userCredential);
@@ -53,6 +55,25 @@ function Login() {
     return (
         <div style={{ maxWidth: "400px", margin: "40px auto", padding: "20px", border: "1px solid #ddd", borderRadius: "8px" }}>
             <h2 style={{ textAlign: "center", color: "#1976d2" }}>Đăng nhập</h2>
+
+            {/* Tài khoản vừa bị quản trị viên khoá — giải thích vì sao bị đăng xuất */}
+            {blockedMessage && (
+                <div
+                    style={{
+                        background: "#ffebee",
+                        border: "1px solid #ffcdd2",
+                        borderRadius: "6px",
+                        padding: "12px 14px",
+                        marginBottom: "14px",
+                    }}
+                >
+                    <strong style={{ color: "#c62828" }}>🔒 Tài khoản bị khoá</strong>
+                    <p style={{ margin: "6px 0 0", color: "#666", fontSize: "14px" }}>
+                        {blockedMessage}
+                    </p>
+                </div>
+            )}
+
             {error && <p style={{ color: "red", textAlign: "center" }}>{error}</p>}
             <form onSubmit={handleLogin} style={{ display: "flex", flexDirection: "column", gap: "15px", marginTop: "20px" }}>
                 <input

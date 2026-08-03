@@ -1,4 +1,6 @@
-const API = "http://localhost:5000/api";
+import { apiUrl } from "../config/api";
+
+const API = apiUrl();
 
 /**
  * Gọi API cần đăng nhập. Mọi endpoint giỏ hàng / đơn hàng / hồ sơ đều lấy

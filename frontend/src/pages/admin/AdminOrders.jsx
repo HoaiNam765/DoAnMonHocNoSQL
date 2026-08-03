@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 
 import { useAuth } from "../../context/AuthContext";
 import ErrorMessage from "../../components/ErrorMessage";
+import OrderItemsModal from "../../components/admin/OrderItemsModal";
 import {
     adminGetOrders,
     adminMarkPaid,
@@ -38,6 +39,7 @@ function AdminOrders({ onOrderChanged }) {
     const [error, setError] = useState(null);
     const [busyId, setBusyId] = useState(null);
     const [retryCount, setRetryCount] = useState(0);
+    const [viewingOrderId, setViewingOrderId] = useState(null);
 
     const load = useCallback(async () => {
         try {
@@ -179,6 +181,15 @@ function AdminOrders({ onOrderChanged }) {
                                         </td>
                                         <td style={td}>
                                             <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                                                {/* Xem sản phẩm khách đã chọn — dùng được ở MỌI trạng thái,
+                                                    kể cả đơn đã thanh toán, để đối chiếu khi giao hàng */}
+                                                <button
+                                                    onClick={() => setViewingOrderId(order.order_id)}
+                                                    style={viewButton}
+                                                >
+                                                    👁 Xem hàng
+                                                </button>
+
                                                 {order.status === "PENDING" && (
                                                     <>
                                                         <button
@@ -229,6 +240,10 @@ function AdminOrders({ onOrderChanged }) {
                     </button>
                 </div>
             )}
+
+            {viewingOrderId && (
+                <OrderItemsModal orderId={viewingOrderId} onClose={() => setViewingOrderId(null)} />
+            )}
         </section>
     );
 }
@@ -277,6 +292,17 @@ const ghostButton = {
     border: "1px solid #c62828",
     borderRadius: "5px",
     cursor: "pointer",
+};
+
+const viewButton = {
+    padding: "6px 12px",
+    background: "white",
+    color: "#2563eb",
+    border: "1px solid #2563eb",
+    borderRadius: "5px",
+    cursor: "pointer",
+    fontWeight: "bold",
+    whiteSpace: "nowrap",
 };
 
 const emptyStyle = { textAlign: "center", padding: "60px 20px", color: "#888" };

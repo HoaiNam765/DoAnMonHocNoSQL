@@ -2,6 +2,7 @@ const express = require('express');
 
 const { readQuery, writeQuery, int } = require('../db');
 const q = require('../queries/shopCypher');
+const stockQ = require('../queries/adminStatsCypher');
 const { asyncHandler, HttpError, parsePagination, buildPagination } = require('../utils/http');
 const { verifyToken } = require('../middleware/auth');
 const { generateOrderCode } = require('../utils/orderCode');
@@ -35,6 +36,16 @@ router.post(
     // Giỏ rỗng thì Cypher không khớp dòng nào và sẽ tạo ra đơn 0 đồng — chặn trước.
     const cart = await readQuery(q.CART_LIST, { customerId });
     if (cart.length === 0) throw new HttpError(400, 'Giỏ hàng đang trống');
+
+    // Kiểm lại tồn kho ngay trước khi chốt đơn: hàng có thể đã bán hết trong
+    // khoảng thời gian sản phẩm nằm chờ trong giỏ.
+    const shortage = await readQuery(stockQ.CHECK_STOCK_FOR_CART, { customerId });
+    if (shortage.length > 0) {
+      const detail = shortage
+        .map((s) => `"${s.title}" (còn ${s.stock}, cần ${s.requested})`)
+        .join('; ');
+      throw new HttpError(409, `Không đủ hàng: ${detail}`);
+    }
 
     const rows = await writeQuery(q.ORDER_CREATE_FROM_CART, {
       customerId,

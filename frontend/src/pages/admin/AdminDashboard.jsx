@@ -9,7 +9,9 @@ import {
     getAdminStats, getAdminCategories, createCategory, updateCategory, deleteCategory,
     getAdminProducts, createProduct, updateProduct, deleteProduct,
     getAdminUsers, getUserDetails, updateUserRole, updateUserStatus,
+    getRevenue, getUserOrders,
 } from "../../services/adminService";
+import { statusInfo, formatPrice } from "../../services/shopService";
 import AdminOrders from "./AdminOrders";
 import "./AdminDashboard.css";
 
@@ -149,34 +151,348 @@ function AdminDashboard() {
     );
 }
 
+/**
+ * Trang tổng quan quản trị.
+ *
+ * PHÂN BIỆT HAI NGUỒN SỐ LIỆU — điểm quan trọng khi đọc bảng điều khiển này:
+ *   - Nhóm thẻ "Đồ thị gợi ý": đếm trên cạnh BOUGHT, phần lớn là dữ liệu mô
+ *     phỏng nạp từ CSV để thuật toán gợi ý có đủ tín hiệu. KHÔNG phải doanh thu.
+ *   - Nhóm thẻ "Kinh doanh thực tế": lấy từ node Order — đơn hàng khách đặt
+ *     thật trên web. Đây mới là doanh thu.
+ */
 function Overview({ stats, onNavigate }) {
-    const summary = stats?.summary || {};
-    const revenueSeries = stats?.revenueByPeriod || [];
+    const { user } = useAuth();
 
-    const chartPoints = (() => {
-        if (!revenueSeries.length) return "";
-        const width = 320;
-        const height = 160;
-        const maxValue = Math.max(...revenueSeries.map((item) => Number(item.revenue || 0)), 1);
-        const stepX = width / Math.max(revenueSeries.length - 1, 1);
-        return revenueSeries.map((item, index) => {
-            const value = Number(item.revenue || 0);
-            const x = index * stepX;
-            const y = height - (value / maxValue) * (height - 20) - 10;
-            return `${x},${y}`;
-        }).join(" ");
-    })();
+    const summary = stats?.summary || {};
+    const orderSummary = stats?.orderSummary || {};
+
+    const [groupBy, setGroupBy] = useState("month");
+    const [range, setRange] = useState({ from: "", to: "" });
+    const [series, setSeries] = useState(stats?.revenueByPeriod || []);
+    const [loadingChart, setLoadingChart] = useState(false);
+
+    // Nạp lại biểu đồ mỗi khi đổi cách gộp hoặc khoảng ngày
+    useEffect(() => {
+        let cancelled = false;
+
+        async function loadRevenue() {
+            try {
+                setLoadingChart(true);
+                const token = await user.getIdToken();
+                const result = await getRevenue(token, { groupBy, ...range });
+                if (!cancelled) setSeries(result.data || []);
+            } catch (err) {
+                console.error("[Overview] Không tải được doanh thu:", err);
+                if (!cancelled) setSeries([]);
+            } finally {
+                if (!cancelled) setLoadingChart(false);
+            }
+        }
+
+        if (user) loadRevenue();
+        return () => {
+            cancelled = true;
+        };
+    }, [user, groupBy, range]);
+
+    const applyPreset = (days) => {
+        const to = new Date();
+        const from = new Date();
+        from.setDate(from.getDate() - days + 1);
+        const fmt = (d) => d.toISOString().slice(0, 10);
+        setGroupBy("day");
+        setRange({ from: fmt(from), to: fmt(to) });
+    };
+
+    const clearRange = () => setRange({ from: "", to: "" });
+
+    // --- Toạ độ biểu đồ ---
+    const WIDTH = 320;
+    const HEIGHT = 160;
+    const maxValue = Math.max(...series.map((d) => Number(d.revenue || 0)), 1);
+    const stepX = WIDTH / Math.max(series.length - 1, 1);
+    const pointAt = (item, index) => ({
+        x: series.length === 1 ? WIDTH / 2 : index * stepX,
+        y: HEIGHT - (Number(item.revenue || 0) / maxValue) * (HEIGHT - 20) - 10,
+    });
+
+    const chartPoints = series.map((d, i) => {
+        const { x, y } = pointAt(d, i);
+        return `${x},${y}`;
+    }).join(" ");
 
     const areaPath = (() => {
-        if (!chartPoints) return "";
-        const points = chartPoints.split(" ").map((point) => point.split(",").map(Number));
-        const height = 160;
-        const line = points.map(([x, y], index) => `${index === 0 ? "M" : "L"}${x} ${y}`).join(" ");
-        return `${line} L${points[points.length - 1][0]} ${height} L${points[0][0]} ${height} Z`;
+        if (!series.length) return "";
+        const pts = series.map((d, i) => pointAt(d, i));
+        const line = pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x} ${p.y}`).join(" ");
+        return `${line} L${pts[pts.length - 1].x} ${HEIGHT} L${pts[0].x} ${HEIGHT} Z`;
     })();
 
-    return <section className="admin-content"><div className="welcome-band"><div><span className="eyebrow">REAL-TIME SNAPSHOT</span><h2>Nhịp vận hành hôm nay</h2><p>Theo dõi sức khỏe cửa hàng và những chuyển động mới nhất.</p></div><button className="primary-button" onClick={() => onNavigate("products")}>Quản lý kho <span>→</span></button></div><div className="stats-grid"><AdminStatCard label="Doanh thu ghi nhận" value={money(summary.total_revenue)} note="Tổng từ các giao dịch BOUGHT" accent="orange" /><AdminStatCard label="Tổng lượt mua" value={Number(summary.total_orders || 0).toLocaleString("vi-VN")} note="Đơn hàng trong đồ thị" accent="blue" /><AdminStatCard label="Khách hàng" value={Number(summary.total_customers || 0).toLocaleString("vi-VN")} note="Tài khoản đang theo dõi" accent="blue" /><AdminStatCard label="Sản phẩm" value={Number(summary.total_products || 0).toLocaleString("vi-VN")} note={`${summary.total_categories || 0} danh mục đang dùng`} accent="violet" /></div><section className="panel chart-panel"><div className="panel-heading"><div><span className="eyebrow">TREND</span><h3>Doanh thu theo thời gian</h3></div><span className="muted">Biểu đồ theo tháng</span></div>{revenueSeries.length ? <div className="revenue-chart"><svg viewBox="0 0 320 160" role="img" aria-label="Doanh thu theo thời gian"><path className="chart-area" d={areaPath} /><polyline className="chart-line" points={chartPoints} /><g>{revenueSeries.map((item, index) => { const value = Number(item.revenue || 0); const width = 320; const height = 160; const maxValue = Math.max(...revenueSeries.map((entry) => Number(entry.revenue || 0)), 1); const stepX = width / Math.max(revenueSeries.length - 1, 1); const x = index * stepX; const y = height - (value / maxValue) * (height - 20) - 10; return <circle key={item.period} className="chart-point" cx={x} cy={y} r="4" />; })}</g></svg><div className="chart-labels">{revenueSeries.map((item) => <span key={item.period}>{item.period}</span>)}</div></div> : <div className="chart-empty">Chưa có dữ liệu doanh thu để hiển thị.</div>}</section><div className="overview-grid"><section className="panel"><div className="panel-heading"><div><span className="eyebrow">PERFORMANCE</span><h3>Doanh thu theo danh mục</h3></div><span className="muted">Xếp theo doanh thu</span></div><div className="revenue-list">{(stats?.categoryRevenue || []).slice(0, 7).map((item, index) => <div className="revenue-row" key={item.category_id}><span className="rank">0{index + 1}</span><div className="revenue-name"><strong>{item.category_name}</strong><span>{item.sold_count || 0} lượt mua</span></div><div className="bar-track"><i style={{ width: `${Math.min(100, ((item.revenue || 0) / Math.max(1, stats.categoryRevenue[0]?.revenue || 1)) * 100)}%` }} /></div><b>{money(item.revenue)}</b></div>)}</div></section><section className="panel"><div className="panel-heading"><div><span className="eyebrow">LATEST ACTIVITY</span><h3>Lượt mua gần nhất</h3></div></div><div className="activity-list">{(stats?.recentOrders || []).slice(0, 5).map((order) => <div className="activity-row" key={`${order.customer_id}-${order.product_id}-${order.bought_at}`}><span className="activity-avatar">{(order.customer_name || "K").slice(0, 1)}</span><div><strong>{order.customer_name || order.customer_id}</strong><span>{order.product_title}</span></div><b>{money(order.final_price)}</b></div>)}</div></section></div></section>;
+    const totalInRange = series.reduce((s, d) => s + Number(d.revenue || 0), 0);
+    const ordersInRange = series.reduce((s, d) => s + Number(d.order_count || 0), 0);
+
+    return (
+        <section className="admin-content">
+            <div className="welcome-band">
+                <div>
+                    <span className="eyebrow">REAL-TIME SNAPSHOT</span>
+                    <h2>Nhịp vận hành hôm nay</h2>
+                    <p>Theo dõi sức khỏe cửa hàng và những chuyển động mới nhất.</p>
+                </div>
+                <button className="primary-button" onClick={() => onNavigate("orders")}>
+                    Xử lý đơn hàng <span>→</span>
+                </button>
+            </div>
+
+            {/* Số liệu kinh doanh thực tế — từ node Order */}
+            <div className="stats-grid">
+                <AdminStatCard
+                    label="Doanh thu thực tế"
+                    value={money(orderSummary.real_revenue)}
+                    note="Từ đơn đã thanh toán"
+                    accent="orange"
+                />
+                <AdminStatCard
+                    label="Chờ thanh toán"
+                    value={Number(orderSummary.pending_orders || 0).toLocaleString("vi-VN")}
+                    note="Đơn khách chưa tới trả tiền"
+                    accent="orange"
+                />
+                <AdminStatCard
+                    label="Tổng đơn hàng"
+                    value={Number(orderSummary.total_orders || 0).toLocaleString("vi-VN")}
+                    note={`${orderSummary.completed_orders || 0} đơn đã hoàn tất`}
+                    accent="blue"
+                />
+                <AdminStatCard
+                    label="Khách hàng"
+                    value={Number(summary.total_customers || 0).toLocaleString("vi-VN")}
+                    note={`${summary.total_products || 0} sản phẩm · ${summary.total_categories || 0} danh mục`}
+                    accent="violet"
+                />
+            </div>
+
+            {/* Biểu đồ doanh thu + bộ lọc */}
+            <section className="panel chart-panel">
+                <div className="panel-heading">
+                    <div>
+                        <span className="eyebrow">TREND</span>
+                        <h3>Doanh thu theo thời gian</h3>
+                    </div>
+                    <span className="muted">
+                        {money(totalInRange)} · {ordersInRange} đơn
+                    </span>
+                </div>
+
+                <div style={filterBar}>
+                    <div style={{ display: "flex", gap: "6px" }}>
+                        <button style={chip(groupBy === "month")} onClick={() => setGroupBy("month")}>
+                            Theo tháng
+                        </button>
+                        <button style={chip(groupBy === "day")} onClick={() => setGroupBy("day")}>
+                            Theo ngày
+                        </button>
+                    </div>
+
+                    <div style={{ display: "flex", gap: "6px" }}>
+                        <button style={chip(false)} onClick={() => applyPreset(7)}>7 ngày</button>
+                        <button style={chip(false)} onClick={() => applyPreset(30)}>30 ngày</button>
+                    </div>
+
+                    <div style={{ display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" }}>
+                        <input
+                            type="date"
+                            value={range.from}
+                            onChange={(e) => setRange({ ...range, from: e.target.value })}
+                            style={dateInput}
+                        />
+                        <span style={{ color: "#94a3b8" }}>→</span>
+                        <input
+                            type="date"
+                            value={range.to}
+                            onChange={(e) => setRange({ ...range, to: e.target.value })}
+                            style={dateInput}
+                        />
+                        {(range.from || range.to) && (
+                            <button style={chip(false)} onClick={clearRange}>Xoá lọc</button>
+                        )}
+                    </div>
+                </div>
+
+                {loadingChart ? (
+                    <div className="chart-empty">Đang tải dữ liệu doanh thu...</div>
+                ) : series.length ? (
+                    <div className="revenue-chart">
+                        <svg viewBox="0 0 320 160" role="img" aria-label="Doanh thu theo thời gian">
+                            <path className="chart-area" d={areaPath} />
+                            <polyline className="chart-line" points={chartPoints} />
+                            <g>
+                                {series.map((item, index) => {
+                                    const { x, y } = pointAt(item, index);
+                                    return (
+                                        <circle key={item.period} className="chart-point" cx={x} cy={y} r="4">
+                                            <title>{`${item.period}: ${money(item.revenue)} (${item.order_count} đơn)`}</title>
+                                        </circle>
+                                    );
+                                })}
+                            </g>
+                        </svg>
+                        <div className="chart-labels">
+                            {series.map((item) => (
+                                <span key={item.period}>{item.period}</span>
+                            ))}
+                        </div>
+                    </div>
+                ) : (
+                    <div className="chart-empty">
+                        Chưa có đơn hàng nào đã thanh toán trong khoảng thời gian này.
+                    </div>
+                )}
+            </section>
+
+            <div className="overview-grid">
+                {/* Doanh thu theo danh mục — tính trên đồ thị BOUGHT */}
+                <section className="panel">
+                    <div className="panel-heading">
+                        <div>
+                            <span className="eyebrow">PERFORMANCE</span>
+                            <h3>Danh mục bán chạy</h3>
+                        </div>
+                        <span className="muted">Theo đồ thị BOUGHT</span>
+                    </div>
+                    <div className="revenue-list">
+                        {(stats?.categoryRevenue || []).slice(0, 7).map((item, index) => (
+                            <div className="revenue-row" key={item.category_id}>
+                                <span className="rank">0{index + 1}</span>
+                                <div className="revenue-name">
+                                    <strong>{item.category_name}</strong>
+                                    <span>{item.sold_count || 0} lượt mua</span>
+                                </div>
+                                <div className="bar-track">
+                                    <i
+                                        style={{
+                                            width: `${Math.min(100, ((item.revenue || 0) / Math.max(1, stats.categoryRevenue[0]?.revenue || 1)) * 100)}%`,
+                                        }}
+                                    />
+                                </div>
+                                <b>{money(item.revenue)}</b>
+                            </div>
+                        ))}
+                    </div>
+                </section>
+
+                {/* Đơn hàng gần nhất — duyệt node Order nên có thời gian chính xác */}
+                <section className="panel">
+                    <div className="panel-heading">
+                        <div>
+                            <span className="eyebrow">LATEST ACTIVITY</span>
+                            <h3>Đơn hàng gần nhất</h3>
+                        </div>
+                        <span className="muted">Mới nhất lên đầu</span>
+                    </div>
+                    <div className="activity-list">
+                        {(stats?.recentOrders || []).length ? (
+                            stats.recentOrders.slice(0, 6).map((order) => {
+                                const info = statusInfo(order.status);
+                                return (
+                                    <div className="activity-row" key={order.order_id}>
+                                        <span className="activity-avatar">
+                                            {(order.customer_name || "K").slice(0, 1)}
+                                        </span>
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                            <strong>{order.customer_name || order.customer_id}</strong>
+                                            <span>
+                                                {order.product_title || "—"}
+                                                {order.item_count > 1 && ` +${order.item_count - 1} món`}
+                                            </span>
+                                            <span style={{ fontSize: "11px", color: "#94a3b8" }}>
+                                                {dateText(order.created_at)}
+                                            </span>
+                                        </div>
+                                        <div style={{ textAlign: "right" }}>
+                                            <b>{money(order.total)}</b>
+                                            <div
+                                                style={{
+                                                    fontSize: "11px",
+                                                    fontWeight: "bold",
+                                                    color: info.color,
+                                                    marginTop: "2px",
+                                                }}
+                                            >
+                                                {info.label}
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })
+                        ) : (
+                            <p className="chart-empty">Chưa có đơn hàng nào.</p>
+                        )}
+                    </div>
+                </section>
+            </div>
+
+            {/* Cảnh báo tồn kho */}
+            {(stats?.lowStock || []).length > 0 && (
+                <section className="panel" style={{ marginTop: "20px" }}>
+                    <div className="panel-heading">
+                        <div>
+                            <span className="eyebrow">INVENTORY</span>
+                            <h3>Sản phẩm sắp hết hàng</h3>
+                        </div>
+                        <button className="primary-button" onClick={() => onNavigate("products")}>
+                            Quản lý kho <span>→</span>
+                        </button>
+                    </div>
+                    <div className="revenue-list">
+                        {stats.lowStock.map((item) => (
+                            <div className="revenue-row" key={item.id}>
+                                <div className="product-cell">
+                                    {item.image ? <img src={item.image} alt="" /> : <span className="image-placeholder">N</span>}
+                                    <div>
+                                        <strong>{item.title}</strong>
+                                    </div>
+                                </div>
+                                <b style={{ color: item.stock === 0 ? "#dc2626" : "#f59e0b" }}>
+                                    {item.stock === 0 ? "Hết hàng" : `Còn ${item.stock}`}
+                                </b>
+                            </div>
+                        ))}
+                    </div>
+                </section>
+            )}
+        </section>
+    );
 }
+
+const filterBar = {
+    display: "flex",
+    gap: "16px",
+    flexWrap: "wrap",
+    alignItems: "center",
+    padding: "12px 0 18px",
+    borderBottom: "1px solid #f1f5f9",
+    marginBottom: "16px",
+};
+
+const chip = (active) => ({
+    padding: "6px 14px",
+    border: active ? "none" : "1px solid #cbd5e1",
+    background: active ? "#2563eb" : "white",
+    color: active ? "white" : "#475569",
+    borderRadius: "18px",
+    cursor: "pointer",
+    fontSize: "13px",
+    fontWeight: active ? "bold" : "normal",
+});
+
+const dateInput = {
+    padding: "6px 10px",
+    border: "1px solid #cbd5e1",
+    borderRadius: "8px",
+    fontSize: "13px",
+    color: "#475569",
+};
 
 function SearchBar({ value, onChange, placeholder }) { return <div className="search-box"><span>⌕</span><input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} /></div>; }
 function Toolbar({ title, count, onAdd, addLabel, children }) { return <div className="section-toolbar"><div><span className="eyebrow">{count} RECORDS</span><h2>{title}</h2></div><div className="toolbar-actions">{children}{addLabel && <button className="primary-button" onClick={onAdd}>＋ {addLabel}</button>}</div></div>; }
@@ -190,6 +506,98 @@ function Users({ users, search, setSearch, page, setPage, onView, onRole, onStat
 function Modal({ title, children, onClose }) { return <div className="modal-backdrop" onMouseDown={onClose}><div className="admin-modal" onMouseDown={(event) => event.stopPropagation()}><div className="modal-heading"><h3>{title}</h3><button onClick={onClose}>×</button></div>{children}</div></div>; }
 function CategoryModal({ form, setForm, onSubmit, onClose, editing }) { return <Modal title={editing ? "Chỉnh sửa danh mục" : "Thêm danh mục"} onClose={onClose}><form className="admin-form" onSubmit={onSubmit}><label>Mã danh mục<input disabled={editing} required value={form.category_id || ""} onChange={(event) => setForm({ ...form, category_id: event.target.value })} /></label><label>Tên danh mục<input required value={form.category_name || ""} onChange={(event) => setForm({ ...form, category_name: event.target.value })} /></label>{editing && <label>Trạng thái<select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}><option value="active">Đang hiển thị</option><option value="hidden">Đã ẩn</option></select></label>}<div className="modal-actions"><button type="button" onClick={onClose}>Hủy</button><button className="primary-button" type="submit">Lưu thay đổi</button></div></form></Modal>; }
 function ProductModal({ form, setForm, categories, onSubmit, onClose, editing }) { const update = (key, value) => setForm({ ...form, [key]: value }); return <Modal title={editing ? "Chỉnh sửa sản phẩm" : "Thêm sản phẩm"} onClose={onClose}><form className="admin-form" onSubmit={onSubmit}><label>Tên sản phẩm<input required value={form.title || ""} onChange={(event) => update("title", event.target.value)} /></label><div className="form-grid"><label>Giá bán<input required type="number" min="0" value={form.final_price} onChange={(event) => update("final_price", event.target.value)} /></label><label>Tồn kho<input required type="number" min="0" value={form.stock} onChange={(event) => update("stock", event.target.value)} /></label></div><div className="form-grid"><label>Đánh giá<input type="number" min="0" max="5" step="0.1" value={form.rating} onChange={(event) => update("rating", event.target.value)} /></label><label>Danh mục<select required value={form.category_id || ""} onChange={(event) => update("category_id", event.target.value)}><option value="">Chọn danh mục</option>{categories.map((category) => <option key={category.category_id} value={category.category_id}>{category.category_name}</option>)}</select></label></div><label>Ảnh sản phẩm<input value={form.image || ""} onChange={(event) => update("image", event.target.value)} placeholder="https://..." /></label><div className="modal-actions"><button type="button" onClick={onClose}>Hủy</button><button className="primary-button" type="submit">Lưu sản phẩm</button></div></form></Modal>; }
-function UserModal({ user, onClose }) { return <Modal title="Hồ sơ người dùng" onClose={onClose}><div className="user-detail"><div className="detail-identity"><span className="detail-avatar">{(user.customer_name || "K").slice(0, 1)}</span><div><h3>{user.customer_name || "Khách hàng nền"}</h3><p>{user.email || "Chưa có email"}</p></div></div><dl><dt>Mã khách hàng</dt><dd>{user.customer_id}</dd><dt>Vai trò</dt><dd>{user.role}</dd><dt>Trạng thái</dt><dd>{user.status}</dd><dt>Lượt mua gần đây</dt><dd>{user.bought_products?.length || 0} sản phẩm</dd></dl></div></Modal>; }
+/**
+ * Hồ sơ người dùng phía quản trị.
+ *
+ * Ngoài thông tin tài khoản, tải thêm lịch sử đơn hàng của chính khách này —
+ * nhân viên thường cần tra cứu "khách này đã mua gì, còn đơn nào chưa trả tiền"
+ * ngay tại chỗ thay vì mở sang trang quản lý đơn rồi tự lọc.
+ */
+function UserModal({ user, onClose }) {
+    const { user: authUser } = useAuth();
+
+    const [orders, setOrders] = useState([]);
+    const [loadingOrders, setLoadingOrders] = useState(true);
+
+    useEffect(() => {
+        let cancelled = false;
+
+        async function loadOrders() {
+            try {
+                setLoadingOrders(true);
+                const token = await authUser.getIdToken();
+                const result = await getUserOrders(token, user.customer_id);
+                if (!cancelled) setOrders(result.data || []);
+            } catch (err) {
+                console.error("[UserModal] Không tải được đơn hàng:", err);
+                if (!cancelled) setOrders([]);
+            } finally {
+                if (!cancelled) setLoadingOrders(false);
+            }
+        }
+
+        loadOrders();
+        return () => { cancelled = true; };
+    }, [authUser, user.customer_id]);
+
+    const totalSpent = orders
+        .filter((o) => ["PAID", "COMPLETED"].includes(o.status))
+        .reduce((s, o) => s + Number(o.total || 0), 0);
+
+    return (
+        <Modal title="Hồ sơ người dùng" onClose={onClose}>
+            <div className="user-detail">
+                <div className="detail-identity">
+                    <span className="detail-avatar">{(user.customer_name || "K").slice(0, 1)}</span>
+                    <div>
+                        <h3>{user.customer_name || "Khách hàng nền"}</h3>
+                        <p>{user.email || "Chưa có email"}</p>
+                    </div>
+                </div>
+
+                <dl>
+                    <dt>Mã khách hàng</dt><dd>{user.customer_id}</dd>
+                    <dt>Vai trò</dt><dd>{user.role}</dd>
+                    <dt>Trạng thái</dt><dd>{user.status}</dd>
+                    <dt>Sản phẩm đã mua</dt><dd>{user.bought_products?.length || 0} sản phẩm</dd>
+                    <dt>Tổng chi tiêu</dt><dd><strong>{formatPrice(totalSpent)}</strong></dd>
+                </dl>
+
+                <h4 style={{ margin: "20px 0 10px", fontSize: "15px" }}>
+                    Đơn hàng của khách ({orders.length})
+                </h4>
+
+                {loadingOrders ? (
+                    <p style={{ color: "#64748b", fontSize: "14px" }}>Đang tải đơn hàng...</p>
+                ) : orders.length === 0 ? (
+                    <p style={{ color: "#64748b", fontSize: "14px" }}>Khách hàng này chưa đặt đơn nào.</p>
+                ) : (
+                    <div style={{ border: "1px solid #e2e8f0", borderRadius: "10px", overflow: "hidden", maxHeight: "260px", overflowY: "auto" }}>
+                        {orders.map((o) => {
+                            const info = statusInfo(o.status);
+                            return (
+                                <div key={o.order_id} style={{ display: "flex", gap: "12px", alignItems: "center", padding: "10px 14px", borderBottom: "1px solid #f1f5f9" }}>
+                                    <code style={{ fontWeight: "bold", color: "#2563eb", fontSize: "13px" }}>{o.order_id}</code>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ fontSize: "13px", color: "#64748b" }}>
+                                            {o.item_count} sản phẩm · {o.total_quantity} món
+                                        </div>
+                                        <div style={{ fontSize: "12px", color: "#94a3b8" }}>{dateText(o.created_at)}</div>
+                                    </div>
+                                    <span style={{ padding: "3px 10px", borderRadius: "12px", fontSize: "11px", fontWeight: "bold", color: info.color, background: info.bg, whiteSpace: "nowrap" }}>
+                                        {info.label}
+                                    </span>
+                                    <strong style={{ color: "#dc2626", fontSize: "14px", whiteSpace: "nowrap" }}>
+                                        {formatPrice(o.total)}
+                                    </strong>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
+        </Modal>
+    );
+}
 
 export default AdminDashboard;

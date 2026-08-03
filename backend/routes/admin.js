@@ -6,6 +6,7 @@ const express = require('express');
 const { readQuery, writeQuery, int } = require('../db');
 const q = require('../queries/cypher');
 const shopQ = require('../queries/shopCypher');
+const statsQ = require('../queries/adminStatsCypher');
 const { asyncHandler, HttpError, parsePagination, buildPagination } = require('../utils/http');
 const { requireAdmin } = require('../middleware/adminAuth');
 
@@ -21,9 +22,17 @@ router.use(requireAdmin);
 router.get(
   '/stats',
   asyncHandler(async (_req, res) => {
-    const statsRows = await readQuery(q.ADMIN_GET_STATS);
-    const categoryRevenue = await readQuery(q.ADMIN_REVENUE_BY_CATEGORY);
-    const recentOrders = await readQuery(q.ADMIN_RECENT_ORDERS);
+    const [statsRows, categoryRevenue, recentOrders, orderSummary, revenueByPeriod, lowStock] =
+      await Promise.all([
+        readQuery(q.ADMIN_GET_STATS),
+        readQuery(q.ADMIN_REVENUE_BY_CATEGORY),
+        // Dùng ADMIN_RECENT_ACTIVITY (duyệt node Order) thay cho truy vấn cũ
+        // duyệt cạnh BOUGHT — xem ghi chú sửa lỗi trong adminStatsCypher.js
+        readQuery(statsQ.RECENT_ACTIVITY),
+        readQuery(statsQ.ORDER_SUMMARY),
+        readQuery(statsQ.REVENUE_BY_PERIOD, { groupBy: 'month', fromDate: null, toDate: null }),
+        readQuery(statsQ.LOW_STOCK_PRODUCTS, { threshold: int(10) }),
+      ]);
 
     const stats = statsRows[0] || {
       total_products: 0,
@@ -36,9 +45,14 @@ router.get(
     res.json({
       status: 'success',
       data: {
+        // Số liệu trên đồ thị BOUGHT (bao gồm dữ liệu mô phỏng)
         summary: stats,
         categoryRevenue,
+        // Số liệu giao dịch thật, lấy từ node Order
+        orderSummary: orderSummary[0] ?? null,
+        revenueByPeriod,
         recentOrders,
+        lowStock,
       },
     });
   })
@@ -274,6 +288,14 @@ router.put(
       throw new HttpError(400, 'Trạng thái không hợp lệ (chấp nhận: active, blocked)');
     }
 
+    // Chặn admin tự khoá chính mình — khoá xong sẽ không vào lại được trang
+    // quản trị để tự mở khoá, phải sửa tay trong database.
+    if (status === 'blocked' && id === `U_${req.user.uid}`) {
+      throw new HttpError(400, 'Không thể tự khoá tài khoản của chính mình');
+    }
+
+    // Khoá tài khoản đồng thời huỷ các đơn chưa thanh toán của khách đó
+    // (xem ghi chú trong ADMIN_UPDATE_USER_STATUS)
     const rows = await writeQuery(q.ADMIN_UPDATE_USER_STATUS, { customerId: id, status });
 
     if (rows.length === 0) {
@@ -348,7 +370,11 @@ router.post(
       throw new HttpError(400, `Đơn đang ở trạng thái ${found[0].status}, không phải PENDING`);
     }
 
-    res.json({ status: 'success', data: rows[0] });
+    // Trừ kho tại thời điểm thanh toán, không phải lúc đặt hàng: khách đặt trên
+    // web nhưng có thể không tới lấy, giữ hàng sớm sẽ khoá nhầm tồn kho.
+    const stockRows = await writeQuery(statsQ.DECREASE_STOCK_FOR_ORDER, { orderId });
+
+    res.json({ status: 'success', data: { ...rows[0], stock_updated: stockRows } });
   })
 );
 
@@ -365,14 +391,82 @@ router.put(
       throw new HttpError(400, 'Dùng POST /orders/:orderId/mark-paid để xác nhận thanh toán');
     }
 
-    const rows = await writeQuery(shopQ.ORDER_UPDATE_STATUS, {
-      orderId: String(req.params.orderId),
-      status,
-    });
+    const orderId = String(req.params.orderId);
 
+    // Phải đọc trạng thái TRƯỚC khi cập nhật: đọc sau thì giá trị đã là trạng
+    // thái mới, không còn biết đơn từng được thanh toán hay chưa.
+    const [before] = await readQuery(shopQ.ORDER_FIND_PENDING, { orderId });
+    if (!before) throw new HttpError(404, 'Không tìm thấy đơn hàng');
+
+    const rows = await writeQuery(shopQ.ORDER_UPDATE_STATUS, { orderId, status });
     if (rows.length === 0) throw new HttpError(404, 'Không tìm thấy đơn hàng');
 
+    // Huỷ đơn đã trừ kho thì phải hoàn hàng về kho
+    if (status === 'CANCELLED' && ['PAID', 'COMPLETED'].includes(before.status)) {
+      await writeQuery(statsQ.RESTORE_STOCK_FOR_ORDER, { orderId });
+    }
+
     res.json({ status: 'success', data: rows[0] });
+  })
+);
+
+// ---------------------------------------------------------------------------
+// THỐNG KÊ DOANH THU THEO THỜI GIAN
+// ---------------------------------------------------------------------------
+
+/**
+ * GET /api/admin/revenue?groupBy=month|day&from=YYYY-MM-DD&to=YYYY-MM-DD
+ *
+ * Doanh thu lấy từ node Order (giao dịch thật), KHÔNG lấy từ cạnh BOUGHT —
+ * BOUGHT phần lớn là dữ liệu mô phỏng phục vụ thuật toán gợi ý.
+ */
+router.get(
+  '/revenue',
+  asyncHandler(async (req, res) => {
+    const groupBy = String(req.query.groupBy ?? 'month').toLowerCase();
+    if (!['month', 'day'].includes(groupBy)) {
+      throw new HttpError(400, "groupBy phải là 'month' hoặc 'day'");
+    }
+
+    const isDate = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v);
+    const fromDate = req.query.from ? String(req.query.from) : null;
+    const toDate = req.query.to ? String(req.query.to) : null;
+
+    if (fromDate && !isDate(fromDate)) throw new HttpError(400, 'from phải có dạng YYYY-MM-DD');
+    if (toDate && !isDate(toDate)) throw new HttpError(400, 'to phải có dạng YYYY-MM-DD');
+
+    const [series, summary] = await Promise.all([
+      readQuery(statsQ.REVENUE_BY_PERIOD, { groupBy, fromDate, toDate }),
+      readQuery(statsQ.ORDER_SUMMARY),
+    ]);
+
+    res.json({
+      status: 'success',
+      groupBy,
+      from: fromDate,
+      to: toDate,
+      data: series,
+      summary: summary[0] ?? null,
+    });
+  })
+);
+
+/** GET /api/admin/users/:id/orders — lịch sử đơn hàng của một khách hàng */
+router.get(
+  '/users/:id/orders',
+  asyncHandler(async (req, res) => {
+    const rows = await readQuery(statsQ.USER_ORDERS, { customerId: String(req.params.id) });
+    res.json({ status: 'success', count: rows.length, data: rows });
+  })
+);
+
+/** GET /api/admin/low-stock?threshold= — sản phẩm sắp hết hàng */
+router.get(
+  '/low-stock',
+  asyncHandler(async (req, res) => {
+    const threshold = Math.max(0, parseInt(req.query.threshold, 10) || 10);
+    const rows = await readQuery(statsQ.LOW_STOCK_PRODUCTS, { threshold: int(threshold) });
+    res.json({ status: 'success', threshold, data: rows });
   })
 );
 

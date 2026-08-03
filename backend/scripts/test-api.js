@@ -34,7 +34,13 @@ const get = async (path) => {
   let r = await get('/api/products?page=1&limit=5');
   check('status 200', r.status === 200, `nhận ${r.status}`);
   check('trả đúng 5 sản phẩm', r.body?.data?.length === 5, `nhận ${r.body?.data?.length}`);
-  check('tổng 1000 sản phẩm', r.body?.pagination?.total === 1000, `nhận ${r.body?.pagination?.total}`);
+  // Không so cứng 1000 nữa: admin có thể thêm sản phẩm mới qua trang quản trị,
+  // nên chỉ kiểm tra dữ liệu import gốc chưa bị mất.
+  check(
+    'còn đủ 1000 sản phẩm import gốc',
+    (r.body?.pagination?.total ?? 0) >= 1000,
+    `chỉ còn ${r.body?.pagination?.total} — chạy lại npm run import`
+  );
   check(
     'có đủ field id/title/final_price/category_name',
     ['id', 'title', 'final_price', 'category_name'].every((k) => k in (r.body?.data?.[0] ?? {}))

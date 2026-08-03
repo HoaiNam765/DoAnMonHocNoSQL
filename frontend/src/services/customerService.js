@@ -1,4 +1,6 @@
-const API_URL = "http://localhost:5000/api/customers";
+import { apiUrl } from "../config/api";
+
+const API_URL = apiUrl("/customers");
 
 export async function getCustomers() {
     const response = await fetch(API_URL);

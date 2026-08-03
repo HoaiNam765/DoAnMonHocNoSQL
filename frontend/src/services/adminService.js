@@ -1,4 +1,6 @@
-const API_URL = "http://localhost:5000/api/admin";
+import { apiUrl } from "../config/api";
+
+const API_URL = apiUrl("/admin");
 
 function httpError(message, status) {
     const error = new Error(message);
@@ -112,4 +114,36 @@ export async function updateUserStatus(token, id, status) {
         method: "PUT",
         body: JSON.stringify({ status }),
     });
+}
+
+// ---------------------------------------------------------------------------
+// 5. Thống kê doanh thu theo thời gian & tồn kho
+// ---------------------------------------------------------------------------
+
+/**
+ * Doanh thu theo thời gian.
+ * @param {"month"|"day"} groupBy gộp theo tháng hay theo ngày
+ * @param {string} from ngày bắt đầu, dạng YYYY-MM-DD (tuỳ chọn)
+ * @param {string} to   ngày kết thúc, dạng YYYY-MM-DD (tuỳ chọn)
+ */
+export async function getRevenue(token, { groupBy = "month", from = "", to = "" } = {}) {
+    const params = new URLSearchParams({ groupBy });
+    if (from) params.set("from", from);
+    if (to) params.set("to", to);
+    return request(`/revenue?${params}`, token);
+}
+
+/** Lịch sử đơn hàng của một khách hàng cụ thể. */
+export async function getUserOrders(token, customerId) {
+    return request(`/users/${customerId}/orders`, token);
+}
+
+/** Chi tiết một đơn hàng, kèm danh sách sản phẩm khách đã chọn. */
+export async function getAdminOrderDetail(token, orderId) {
+    return request(`/orders/${orderId}`, token);
+}
+
+/** Sản phẩm sắp hết hàng. */
+export async function getLowStock(token, threshold = 10) {
+    return request(`/low-stock?threshold=${threshold}`, token);
 }

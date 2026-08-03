@@ -1,4 +1,6 @@
-const API_URL = "http://localhost:5000/api/products";
+import { apiUrl } from "../config/api";
+
+const API_URL = apiUrl("/products");
 
 /**
  * Tạo Error có kèm mã HTTP để phía giao diện phân biệt được các trường hợp:

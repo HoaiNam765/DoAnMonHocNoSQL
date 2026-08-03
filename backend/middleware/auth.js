@@ -6,6 +6,39 @@
  */
 const admin = require('../firebase');
 const { HttpError } = require('../utils/http');
+const { readQuery } = require('../db');
+const { GET_CUSTOMER_STATUS } = require('../queries/cypher');
+
+/**
+ * Kiểm tra tài khoản có bị khoá không.
+ *
+ * VÌ SAO KIỂM Ở ĐÂY: Firebase chỉ trả lời "token có hợp lệ không", nó không
+ * biết gì về trạng thái nghiệp vụ. Trạng thái khoá được admin ghi vào Neo4j,
+ * nên phải tra Neo4j thì lệnh khoá mới có hiệu lực. Nếu bỏ bước này, nút
+ * "Khoá tài khoản" chỉ đổi màu nhãn chứ không chặn được gì.
+ *
+ * ĐÁNH ĐỔI: mỗi request đã đăng nhập tốn thêm một truy vấn Neo4j. Truy vấn này
+ * tra đúng 1 node theo `customer_id` — trường đã có UNIQUE constraint nên
+ * Neo4j dùng index seek, chi phí không đáng kể ở quy mô đồ án. Muốn tối ưu
+ * thêm thì cache trạng thái trong bộ nhớ với thời hạn ngắn.
+ *
+ * Ưu điểm so với việc vô hiệu hoá tài khoản trên Firebase: chỉ có MỘT nguồn sự
+ * thật (Neo4j), không phải đồng bộ hai chiều giữa hai hệ thống.
+ *
+ * @returns {boolean} true nếu tài khoản đang bị khoá
+ */
+const isBlocked = async (uid) => {
+  try {
+    const rows = await readQuery(GET_CUSTOMER_STATUS, { customerId: `U_${uid}` });
+    // Chưa có node Customer (chưa gọi /auth/sync lần nào) → chưa bị khoá
+    return rows[0]?.status === 'blocked';
+  } catch (err) {
+    // Neo4j lỗi thì KHÔNG chặn người dùng — tránh biến sự cố hạ tầng thành
+    // sự cố đăng nhập cho toàn bộ khách hàng.
+    console.error('[Auth] Không kiểm tra được trạng thái tài khoản:', err.message);
+    return false;
+  }
+};
 
 /**
  * Trợ giúp lấy Auth instance an toàn trên mọi phiên bản SDK
@@ -44,6 +77,13 @@ const verifyToken = async (req, _res, next) => {
 
     const decoded = await getAuth().verifyIdToken(token);
 
+    if (await isBlocked(decoded.uid)) {
+      throw new HttpError(
+        403,
+        'Tài khoản của bạn đã bị khoá. Vui lòng liên hệ cửa hàng để được hỗ trợ.'
+      );
+    }
+
     req.user = {
       uid: decoded.uid,
       email: decoded.email || null,
@@ -73,6 +113,14 @@ const optionalAuth = async (req, _res, next) => {
     }
 
     const decoded = await getAuth().verifyIdToken(token);
+
+    // Tài khoản bị khoá → coi như khách vãng lai: vẫn xem được trang công khai
+    // nhưng KHÔNG ghi nhận hành vi VIEWED vào đồ thị gợi ý.
+    if (await isBlocked(decoded.uid)) {
+      req.user = null;
+      return next();
+    }
+
     req.user = {
       uid: decoded.uid,
       email: decoded.email || null,

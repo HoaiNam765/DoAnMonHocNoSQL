@@ -26,6 +26,7 @@ RETURN p.id            AS id,
        p.final_price   AS final_price,
        p.rating        AS rating,
        p.image         AS image,
+       coalesce(p.stock, 0) AS stock,
        c.category_id   AS category_id,
        c.category_name AS category_name
 ORDER BY coalesce(p.rating, 0) DESC, p.id ASC
@@ -41,6 +42,7 @@ RETURN p.id            AS id,
        p.final_price   AS final_price,
        p.rating        AS rating,
        p.image         AS image,
+       coalesce(p.stock, 0) AS stock,
        c.category_id   AS category_id,
        c.category_name AS category_name,
        count { (:Customer)-[:BOUGHT]->(p) }  AS bought_count,
@@ -162,6 +164,7 @@ RETURN p.id            AS id,
        p.final_price   AS final_price,
        p.rating        AS rating,
        p.image         AS image,
+       coalesce(p.stock, 0) AS stock,
        cat.category_id   AS category_id,
        cat.category_name AS category_name,
        count { (:Customer)-[:BOUGHT]->(p) }  AS bought_count,
@@ -448,8 +451,34 @@ RETURN c.customer_id AS customer_id, r.role_name AS role
 /** Cập nhật trạng thái người dùng (active / blocked). */
 const ADMIN_UPDATE_USER_STATUS = `
 MATCH (c:Customer {customer_id: $customerId})
-SET c.status = $status
-RETURN c.customer_id AS customer_id, c.status AS status
+SET c.status     = $status,
+    c.blocked_at = CASE WHEN $status = 'blocked' THEN datetime() ELSE null END
+
+// Khoá tài khoản thì huỷ luôn các đơn CHƯA thanh toán của khách đó — không để
+// đơn treo vô thời hạn ở trạng thái chờ. Đơn đã thanh toán giữ nguyên vì tiền
+// đã thu và hàng đã trừ kho.
+//
+// Không cần hoàn kho: kho chỉ bị trừ tại bước xác nhận thanh toán, mà đơn
+// PENDING thì chưa qua bước đó.
+WITH c
+OPTIONAL MATCH (c)-[:PLACED]->(o:Order)
+WHERE $status = 'blocked' AND o.status = 'PENDING'
+SET o.status        = 'CANCELLED',
+    o.cancelled_at  = datetime(),
+    o.cancel_reason = 'Tài khoản bị khoá bởi quản trị viên'
+
+RETURN c.customer_id AS customer_id,
+       c.status      AS status,
+       count(o)      AS cancelled_orders
+`;
+
+/**
+ * Đọc trạng thái tài khoản để middleware quyết định cho qua hay chặn.
+ * Truy vấn cực nhẹ: chỉ tra 1 node theo khoá có unique index.
+ */
+const GET_CUSTOMER_STATUS = `
+MATCH (c:Customer {customer_id: $customerId})
+RETURN coalesce(c.status, 'active') AS status
 `;
 
 module.exports = {
@@ -482,4 +511,5 @@ module.exports = {
   ADMIN_GET_USER_DETAILS,
   ADMIN_UPDATE_USER_ROLE,
   ADMIN_UPDATE_USER_STATUS,
+  GET_CUSTOMER_STATUS,
 };

@@ -1,4 +1,6 @@
-const API_URL = "http://localhost:5000/api/auth";
+import { apiUrl } from "../config/api";
+
+const API_URL = apiUrl("/auth");
 
 /**
  * Tạo Error có kèm mã HTTP để giao diện bắt lỗi dễ dàng
@@ -22,7 +24,10 @@ export async function syncUser(token) {
     });
 
     if (!response.ok) {
-        throw httpError("Lỗi đồng bộ dữ liệu với máy chủ", response.status);
+        // Giữ nguyên thông báo từ backend — với lỗi 403 (tài khoản bị khoá),
+        // đây là câu duy nhất giải thích được vì sao người dùng bị đăng xuất.
+        const body = await response.json().catch(() => ({}));
+        throw httpError(body.message || "Lỗi đồng bộ dữ liệu với máy chủ", response.status);
     }
 
     return response.json();

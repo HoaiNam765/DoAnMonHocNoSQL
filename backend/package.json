@@ -12,7 +12,10 @@
     "explain": "node scripts/explain-profile.js",
     "setup:auth": "node scripts/setup-auth.js",
     "setup:admin": "node scripts/setup-admin.js",
-    "test:shop": "node scripts/test-shop.js"
+    "test:shop": "node scripts/test-shop.js",
+    "setup:stock": "node scripts/setup-stock.js",
+    "test:admin": "node scripts/test-admin-stats.js",
+    "test:block": "node scripts/test-block.js"
   },
   "keywords": [],
   "author": "",

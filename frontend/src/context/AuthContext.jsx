@@ -17,6 +17,8 @@ export function AuthProvider({ children }) {
     const [user, setUser] = useState(null); // Firebase User
     const [customer, setCustomer] = useState(null); // Neo4j Customer data
     const [loading, setLoading] = useState(true);
+    // Thông báo khi tài khoản bị khoá — trang Login đọc để hiện lý do bị đăng xuất
+    const [blockedMessage, setBlockedMessage] = useState("");
 
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -26,9 +28,18 @@ export function AuthProvider({ children }) {
                     const token = await currentUser.getIdToken();
                     const result = await syncUser(token);
                     setCustomer(result.data);
+                    setBlockedMessage("");
                 } catch (error) {
                     console.error("Lỗi đồng bộ thông tin khách hàng:", error);
                     setCustomer(null);
+
+                    // 403 = tài khoản bị quản trị viên khoá. Đăng xuất luôn thay vì
+                    // để người dùng kẹt trong trạng thái "đã đăng nhập nhưng làm gì
+                    // cũng lỗi" — mọi endpoint sau đó đều trả 403.
+                    if (error.status === 403) {
+                        setBlockedMessage(error.message);
+                        await signOut(auth);
+                    }
                 }
             } else {
                 setCustomer(null);
@@ -84,6 +95,8 @@ export function AuthProvider({ children }) {
                 user,
                 customer,
                 loading,
+                blockedMessage,
+                clearBlockedMessage: () => setBlockedMessage(""),
                 register,
                 login,
                 loginWithGoogle,
