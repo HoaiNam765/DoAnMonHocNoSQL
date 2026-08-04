@@ -67,6 +67,9 @@ export const createOrder = (token, info) =>
         body: JSON.stringify(info),
     });
 
+export const confirmOrderPaid = (token, orderId) =>
+    authFetch(`/orders/${orderId}/confirm-paid`, token, { method: "POST" });
+
 export const getMyOrders = (token, page = 1, limit = 10) =>
     authFetch(`/orders?page=${page}&limit=${limit}`, token);
 

@@ -27,7 +27,7 @@ router.post(
   '/',
   asyncHandler(async (req, res) => {
     const customerId = customerIdOf(req);
-    const { receiverName, phone, address, note } = req.body ?? {};
+    const { receiverName, phone, address, note, paymentMethod = 'COD' } = req.body ?? {};
 
     if (!String(receiverName ?? '').trim()) throw new HttpError(400, 'Thiếu tên người nhận');
     if (!String(phone ?? '').trim()) throw new HttpError(400, 'Thiếu số điện thoại');
@@ -47,11 +47,16 @@ router.post(
       throw new HttpError(409, `Không đủ hàng: ${detail}`);
     }
 
+    const normalizedPaymentMethod = String(paymentMethod || 'COD').toUpperCase();
+    if (!['COD', 'ZALOPAY'].includes(normalizedPaymentMethod)) {
+      throw new HttpError(400, 'Phương thức thanh toán không hợp lệ');
+    }
+
     const rows = await writeQuery(q.ORDER_CREATE_FROM_CART, {
       customerId,
       orderId: generateOrderCode(),
       status: 'PENDING',
-      paymentMethod: 'AT_STORE',
+      paymentMethod: normalizedPaymentMethod,
       receiverName: String(receiverName).trim(),
       phone: String(phone).trim(),
       address: String(address).trim(),
@@ -110,6 +115,22 @@ router.get(
 );
 
 /** POST /api/orders/:orderId/cancel — khách tự huỷ đơn khi chưa thanh toán */
+router.post(
+  '/:orderId/confirm-paid',
+  asyncHandler(async (req, res) => {
+    const rows = await writeQuery(q.ORDER_CONFIRM_PAID_BY_CUSTOMER, {
+      customerId: customerIdOf(req),
+      orderId: String(req.params.orderId),
+    });
+
+    if (rows.length === 0) {
+      throw new HttpError(400, 'Không xác nhận được thanh toán — đơn không tồn tại hoặc chưa dùng ZaloPay');
+    }
+
+    res.json({ data: rows[0] });
+  })
+);
+
 router.post(
   '/:orderId/cancel',
   asyncHandler(async (req, res) => {

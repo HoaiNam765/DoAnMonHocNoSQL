@@ -17,7 +17,7 @@ import "./AdminDashboard.css";
 
 const money = (value) => `${Number(value || 0).toLocaleString("vi-VN")} đ`;
 const dateText = (value) => value ? String(value).replace("T", " ").slice(0, 16) : "--";
-const emptyProduct = { title: "", final_price: "", rating: 5, image: "", category_id: "", stock: 100 };
+const createEmptyProduct = () => ({ title: "", final_price: "", rating: 5, image: "", category_id: "", stock: 100 + Math.floor(Math.random() * 101) });
 
 function AdminDashboard() {
     const { user, customer, loading: authLoading, logout, refreshCustomer } = useAuth();
@@ -32,7 +32,7 @@ function AdminDashboard() {
     const [search, setSearch] = useState("");
     const [page, setPage] = useState(1);
     const [modal, setModal] = useState(null);
-    const [form, setForm] = useState(emptyProduct);
+    const [form, setForm] = useState(createEmptyProduct());
     const [selectedUser, setSelectedUser] = useState(null);
     const [checkingAccess, setCheckingAccess] = useState(true);
     const [statsRefreshKey, setStatsRefreshKey] = useState(0);
@@ -101,7 +101,7 @@ function AdminDashboard() {
     if (String(customer?.role || "").toLowerCase() !== "admin") return <Navigate to="/" replace />;
 
     const changeSection = (next) => { setSection(next); setPage(1); setSearch(""); setError(""); };
-    const closeModal = () => { setModal(null); setSelectedUser(null); setForm(emptyProduct); };
+    const closeModal = () => { setModal(null); setSelectedUser(null); setForm(createEmptyProduct()); };
     const saveCategory = async (event) => {
         event.preventDefault();
         try {
@@ -120,9 +120,23 @@ function AdminDashboard() {
             const result = await getAdminProducts(token, { page: 1, limit: 8, search }); setProducts(result);
         } catch (saveError) { setError(saveError.message); }
     };
-    const openProduct = (item) => { setForm(item ? { ...emptyProduct, ...item } : emptyProduct); setModal({ type: "product", item }); };
+    const openProduct = (item) => { setForm(item ? { ...createEmptyProduct(), ...item } : createEmptyProduct()); setModal({ type: "product", item }); };
     const openCategory = (item) => { setForm(item ? { ...item } : { category_id: "", category_name: "", status: "active" }); setModal({ type: "category", item }); };
     const openUser = async (item) => { try { const result = await getUserDetails(token, item.customer_id); setSelectedUser(result.data); } catch (loadError) { setError(loadError.message); } };
+    const toggleUserStatus = async (id, currentStatus) => {
+        const nextStatus = currentStatus === "blocked" ? "active" : "blocked";
+        const message = nextStatus === "blocked"
+            ? "Khóa tài khoản này? Hành động này sẽ ngăn người dùng đăng nhập."
+            : "Mở khóa tài khoản này?";
+        if (!window.confirm(message)) return;
+        try {
+            await updateUserStatus(token, id, nextStatus);
+            const result = await getAdminUsers(token, { page, limit: 8, search });
+            setUsers(result);
+        } catch (saveError) {
+            setError(saveError.message);
+        }
+    };
     const archive = async (type, id) => {
         if (!window.confirm("Ẩn mục này khỏi hệ thống?")) return;
         try { if (type === "product") await deleteProduct(token, id); else await deleteCategory(token, id); setPage(1); if (type === "product") setProducts(await getAdminProducts(token, { page: 1, limit: 8, search })); else setCategories((await getAdminCategories(token)).data || []); } catch (deleteError) { setError(deleteError.message); }
@@ -140,7 +154,7 @@ function AdminDashboard() {
                         {section === "orders" && <AdminOrders onOrderChanged={() => setStatsRefreshKey((value) => value + 1)} />}
                         {section === "categories" && <Categories categories={categories} onAdd={() => openCategory()} onEdit={openCategory} onDelete={(id) => archive("category", id)} />}
                         {section === "products" && <Products products={products} categories={categories} search={search} setSearch={setSearch} page={page} setPage={setPage} onAdd={() => openProduct()} onEdit={openProduct} onDelete={(id) => archive("product", id)} />}
-                        {section === "users" && <Users users={users} search={search} setSearch={setSearch} page={page} setPage={setPage} onView={openUser} onRole={async (id, role) => { await updateUserRole(token, id, role); setUsers(await getAdminUsers(token, { page, limit: 8, search })); }} onStatus={async (id, status) => { await updateUserStatus(token, id, status); setUsers(await getAdminUsers(token, { page, limit: 8, search })); }} />}
+                        {section === "users" && <Users users={users} search={search} setSearch={setSearch} page={page} setPage={setPage} onView={openUser} onRole={async (id, role) => { await updateUserRole(token, id, role); setUsers(await getAdminUsers(token, { page, limit: 8, search })); }} onStatus={toggleUserStatus} />}
                     </>
                 )}
             </main>
@@ -170,6 +184,12 @@ function Overview({ stats, onNavigate }) {
     const [range, setRange] = useState({ from: "", to: "" });
     const [series, setSeries] = useState(stats?.revenueByPeriod || []);
     const [loadingChart, setLoadingChart] = useState(false);
+
+    useEffect(() => {
+        if (stats?.revenueByPeriod) {
+            setSeries(stats.revenueByPeriod);
+        }
+    }, [stats?.revenueByPeriod]);
 
     // Nạp lại biểu đồ mỗi khi đổi cách gộp hoặc khoảng ngày
     useEffect(() => {
@@ -291,6 +311,9 @@ function Overview({ stats, onNavigate }) {
                         </button>
                         <button style={chip(groupBy === "day")} onClick={() => setGroupBy("day")}>
                             Theo ngày
+                        </button>
+                        <button style={chip(groupBy === "year")} onClick={() => setGroupBy("year")}>
+                            Theo năm
                         </button>
                     </div>
 
@@ -446,16 +469,19 @@ function Overview({ stats, onNavigate }) {
                     </div>
                     <div className="revenue-list">
                         {stats.lowStock.map((item) => (
-                            <div className="revenue-row" key={item.id}>
+                            <div className="inventory-alert-row" key={item.id}>
                                 <div className="product-cell">
                                     {item.image ? <img src={item.image} alt="" /> : <span className="image-placeholder">N</span>}
                                     <div>
                                         <strong>{item.title}</strong>
                                     </div>
                                 </div>
-                                <b style={{ color: item.stock === 0 ? "#dc2626" : "#f59e0b" }}>
-                                    {item.stock === 0 ? "Hết hàng" : `Còn ${item.stock}`}
-                                </b>
+                                <div className="inventory-meta">
+                                    <b style={{ color: item.stock === 0 ? "#dc2626" : "#f59e0b" }}>
+                                        {item.stock === 0 ? "Hết hàng" : `Còn ${item.stock}`}
+                                    </b>
+                                    <span>{item.stock <= 5 ? "Cần bổ sung ngay" : "Theo dõi mức tồn"}</span>
+                                </div>
                             </div>
                         ))}
                     </div>
@@ -501,7 +527,7 @@ function Pagination({ pagination, page, setPage }) { const total = pagination?.t
 
 function Categories({ categories, onAdd, onEdit, onDelete }) { return <section className="admin-content"><Toolbar title="Danh mục sản phẩm" count={categories.length} onAdd={onAdd} addLabel="Thêm danh mục" /><div className="panel table-panel"><table><thead><tr><th>Mã danh mục</th><th>Tên danh mục</th><th>Sản phẩm</th><th>Trạng thái</th><th /></tr></thead><tbody>{categories.length ? categories.map((item) => <tr key={item.category_id}><td><code>{item.category_id}</code></td><td><strong>{item.category_name}</strong></td><td>{item.product_count}</td><td><span className={`status ${item.status === "hidden" ? "blocked" : "active"}`}>{item.status === "hidden" ? "Đã ẩn" : "Đang hiển thị"}</span></td><td className="row-actions"><button onClick={() => onEdit(item)}>Sửa</button><button className="danger-text" onClick={() => onDelete(item.category_id)}>Ẩn</button></td></tr>) : <EmptyRow colSpan="5" />}</tbody></table></div></section>; }
 function Products({ products, categories, search, setSearch, page, setPage, onAdd, onEdit, onDelete }) { return <section className="admin-content"><Toolbar title="Kho sản phẩm" count={products.pagination?.total || 0} onAdd={onAdd} addLabel="Thêm sản phẩm"><SearchBar value={search} onChange={(value) => { setSearch(value); setPage(1); }} placeholder="Tìm theo tên sản phẩm..." /></Toolbar><div className="panel table-panel"><table><thead><tr><th>Sản phẩm</th><th>Danh mục</th><th>Giá bán</th><th>Đánh giá</th><th>Kho</th><th>Trạng thái</th><th /></tr></thead><tbody>{products.data?.length ? products.data.map((item) => <tr key={item.id}><td><div className="product-cell">{item.image ? <img src={item.image} alt="" /> : <span className="image-placeholder">N</span>}<div><strong>{item.title}</strong><code>{item.id}</code></div></div></td><td>{item.category_name || "--"}</td><td><strong>{money(item.final_price)}</strong></td><td>★ {Number(item.rating || 0).toFixed(1)}</td><td>{item.stock ?? "--"}</td><td><span className="status active">Đang bán</span></td><td className="row-actions"><button onClick={() => onEdit(item)}>Sửa</button><button className="danger-text" onClick={() => onDelete(item.id)}>Ẩn</button></td></tr>) : <EmptyRow colSpan="7" />}</tbody></table><Pagination pagination={products.pagination} page={page} setPage={setPage} /></div></section>; }
-function Users({ users, search, setSearch, page, setPage, onView, onRole, onStatus }) { return <section className="admin-content"><Toolbar title="Người dùng" count={users.pagination?.total || 0} onAdd={() => {}} addLabel=""><SearchBar value={search} onChange={(value) => { setSearch(value); setPage(1); }} placeholder="Tìm tên, email hoặc mã khách..." /></Toolbar><div className="panel table-panel"><table><thead><tr><th>Người dùng</th><th>Vai trò</th><th>Trạng thái</th><th>Lượt mua</th><th>Ngày tạo</th><th /></tr></thead><tbody>{users.data?.length ? users.data.map((item) => <tr key={item.customer_id}><td><div className="user-cell"><span className="activity-avatar">{(item.customer_name || "K").slice(0, 1)}</span><div><strong>{item.customer_name || "Khách hàng nền"}</strong><span>{item.email || item.customer_id}</span></div></div></td><td><select className="inline-select" value={item.role} onChange={(event) => onRole(item.customer_id, event.target.value)}><option value="user">User</option><option value="admin">Admin</option></select></td><td><button className={`status ${item.status === "blocked" ? "blocked" : "active"}`} onClick={() => onStatus(item.customer_id, item.status === "blocked" ? "active" : "blocked")}>{item.status === "blocked" ? "Đã khóa" : "Hoạt động"}</button></td><td>{item.bought_count || 0}</td><td>{dateText(item.created_at)}</td><td className="row-actions"><button onClick={() => onView(item)}>Chi tiết</button></td></tr>) : <EmptyRow colSpan="6" />}</tbody></table><Pagination pagination={users.pagination} page={page} setPage={setPage} /></div></section>; }
+function Users({ users, search, setSearch, page, setPage, onView, onRole, onStatus }) { return <section className="admin-content"><Toolbar title="Người dùng" count={users.pagination?.total || 0} onAdd={() => {}} addLabel=""><SearchBar value={search} onChange={(value) => { setSearch(value); setPage(1); }} placeholder="Tìm tên, email hoặc mã khách..." /></Toolbar><div className="panel table-panel"><table><thead><tr><th>Người dùng</th><th>Vai trò</th><th>Trạng thái</th><th>Lượt mua</th><th>Ngày tạo</th><th /></tr></thead><tbody>{users.data?.length ? users.data.map((item) => <tr key={item.customer_id}><td><div className="user-cell"><span className="activity-avatar">{(item.customer_name || "K").slice(0, 1)}</span><div><strong>{item.customer_name || "Khách hàng nền"}</strong><span>{item.email || item.customer_id}</span></div></div></td><td><select className="inline-select" value={item.role} onChange={(event) => onRole(item.customer_id, event.target.value)}><option value="user">User</option><option value="admin">Admin</option></select></td><td><div className="user-status-cell"><span className={`status ${item.status === "blocked" ? "blocked" : "active"}`}>{item.status === "blocked" ? "Đã khóa" : "Hoạt động"}</span><button className="icon-button" title={item.status === "blocked" ? "Mở khóa tài khoản" : "Khóa tài khoản"} onClick={() => onStatus(item.customer_id, item.status)} aria-label={item.status === "blocked" ? "Mở khóa tài khoản" : "Khóa tài khoản"}>{item.status === "blocked" ? "🔓" : "🔒"}</button></div></td><td>{item.bought_count || 0}</td><td>{dateText(item.created_at)}</td><td className="row-actions"><button onClick={() => onView(item)}>Chi tiết</button></td></tr>) : <EmptyRow colSpan="6" />}</tbody></table><Pagination pagination={users.pagination} page={page} setPage={setPage} /></div></section>; }
 
 function Modal({ title, children, onClose }) { return <div className="modal-backdrop" onMouseDown={onClose}><div className="admin-modal" onMouseDown={(event) => event.stopPropagation()}><div className="modal-heading"><h3>{title}</h3><button onClick={onClose}>×</button></div>{children}</div></div>; }
 function CategoryModal({ form, setForm, onSubmit, onClose, editing }) { return <Modal title={editing ? "Chỉnh sửa danh mục" : "Thêm danh mục"} onClose={onClose}><form className="admin-form" onSubmit={onSubmit}><label>Mã danh mục<input disabled={editing} required value={form.category_id || ""} onChange={(event) => setForm({ ...form, category_id: event.target.value })} /></label><label>Tên danh mục<input required value={form.category_name || ""} onChange={(event) => setForm({ ...form, category_name: event.target.value })} /></label>{editing && <label>Trạng thái<select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}><option value="active">Đang hiển thị</option><option value="hidden">Đã ẩn</option></select></label>}<div className="modal-actions"><button type="button" onClick={onClose}>Hủy</button><button className="primary-button" type="submit">Lưu thay đổi</button></div></form></Modal>; }

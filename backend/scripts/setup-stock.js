@@ -73,13 +73,11 @@ const rnd = makeRandom(SEED);
 
     const maxSold = Math.max(...products.map((p) => p.sold), 1);
 
-    // Hàng càng bán chạy thì tồn càng ít: từ ~20 (hot) tới ~200 (ế)
-    const updates = products.map(({ id, sold }) => {
-      const popularity = sold / maxSold; // 0..1
-      const base = 200 - popularity * 170; // 200 -> 30
-      const jitter = 0.75 + rnd() * 0.5; // ±25%
-      return { id, stock: Math.max(0, Math.round(base * jitter)) };
-    });
+    // Mỗi sản phẩm nhận một giá trị tồn kho ngẫu nhiên trong khoảng 100–200.
+    const updates = products.map(({ id }) => ({
+      id,
+      stock: 100 + Math.floor(rnd() * 101),
+    }));
 
     // --- 3. Ghi theo lô ---
     console.log(`\nĐang nạp tồn kho cho ${updates.length} sản phẩm...`);

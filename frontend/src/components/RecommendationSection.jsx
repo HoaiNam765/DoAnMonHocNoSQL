@@ -74,7 +74,7 @@ function RecommendationSection() {
                 </p>
             )}
 
-            <ProductList products={products} />
+            <ProductList products={products} itemsPerPage={8} showPagination={true} />
         </section>
     );
 }

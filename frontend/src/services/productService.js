@@ -65,7 +65,7 @@ export async function getPopularProducts(limit = 8) {
 /**
  * Khách khác cũng mua
  */
-export async function getRecommendations(productId, limit = 6) {
+export async function getRecommendations(productId, limit = 20) {
     const response = await fetch(
         `${API_URL}/${productId}/recommendations?limit=${limit}`
     );

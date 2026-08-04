@@ -30,7 +30,8 @@ WHERE ($fromDate IS NULL OR date(ts) >= date($fromDate))
 WITH o,
      CASE $groupBy
        WHEN 'day' THEN toString(date(ts))
-       ELSE toString(ts.year) + '-' + right('0' + toString(ts.month), 2)
+       WHEN 'month' THEN toString(ts.year) + '-' + right('0' + toString(ts.month), 2)
+       ELSE toString(ts.year)
      END AS period
 RETURN period,
        sum(o.total) AS revenue,

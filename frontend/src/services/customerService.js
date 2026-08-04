@@ -12,7 +12,7 @@ export async function getCustomers() {
     return response.json();
 }
 
-export async function getCustomerRecommendations(customerId, limit = 6) {
+export async function getCustomerRecommendations(customerId, limit = 20) {
     const response = await fetch(
         `${API_URL}/${customerId}/recommendations?limit=${limit}`
     );

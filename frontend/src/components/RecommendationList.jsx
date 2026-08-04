@@ -23,7 +23,7 @@ function RecommendationList({ productId }) {
     return (
         <div style={{ marginTop: "40px" }}>
             <h2 className="recommend-section__title">🛒 Khách khác cũng mua</h2>
-            <ProductList products={products} />
+            <ProductList products={products} itemsPerPage={8} showPagination={true} />
         </div>
     );
 }

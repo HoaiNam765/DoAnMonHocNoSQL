@@ -115,7 +115,7 @@ router.get(
   '/:id/recommendations',
   asyncHandler(async (req, res) => {
     const productId = String(req.params.id);
-    const limit = Math.min(Math.max(1, parseInt(req.query.limit, 10) || 5), MAX_RECOMMENDATIONS);
+    const limit = Math.min(Math.max(1, parseInt(req.query.limit, 10) || 20), MAX_RECOMMENDATIONS);
 
     // Sản phẩm không tồn tại thì trả 404 thay vì mảng rỗng gây hiểu nhầm "không có gợi ý".
     const product = await readQuery(q.GET_PRODUCT_BY_ID, { productId });
