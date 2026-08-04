@@ -324,7 +324,12 @@ router.put(
 
 const ORDER_STATUSES = ['PENDING', 'PAID', 'COMPLETED', 'CANCELLED'];
 
-/** GET /api/admin/orders?status=&page=&limit= — danh sách toàn bộ đơn */
+/**
+ * GET /api/admin/orders?status=&search=&from=&to=&page=&limit=
+ *
+ * search khớp trên: mã đơn, tên người nhận, số điện thoại, tên khách hàng.
+ * from/to lọc theo NGÀY ĐẶT hàng, định dạng YYYY-MM-DD.
+ */
 router.get(
   '/orders',
   asyncHandler(async (req, res) => {
@@ -335,9 +340,21 @@ router.get(
       throw new HttpError(400, `status phải là một trong: ${ORDER_STATUSES.join(', ')}`);
     }
 
+    // Hạ chữ thường để khớp với toLower() trong Cypher
+    const search = String(req.query.search ?? '').trim().toLowerCase();
+
+    const isDate = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v);
+    const fromDate = req.query.from ? String(req.query.from) : null;
+    const toDate = req.query.to ? String(req.query.to) : null;
+
+    if (fromDate && !isDate(fromDate)) throw new HttpError(400, 'from phải có dạng YYYY-MM-DD');
+    if (toDate && !isDate(toDate)) throw new HttpError(400, 'to phải có dạng YYYY-MM-DD');
+
+    const filters = { status, search, fromDate, toDate };
+
     const [countRows, rows] = await Promise.all([
-      readQuery(shopQ.ADMIN_ORDER_COUNT, { status }),
-      readQuery(shopQ.ADMIN_ORDER_LIST, { status, skip: int(skip), limit: int(limit) }),
+      readQuery(shopQ.ADMIN_ORDER_COUNT, filters),
+      readQuery(shopQ.ADMIN_ORDER_LIST, { ...filters, skip: int(skip), limit: int(limit) }),
     ]);
 
     res.json({

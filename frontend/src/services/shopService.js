@@ -94,8 +94,21 @@ export const updateMyProfile = (token, data) =>
 // Admin — quản lý đơn hàng
 // ---------------------------------------------------------------------------
 
-export const adminGetOrders = (token, { status = "", page = 1, limit = 20 } = {}) =>
-    authFetch(`/admin/orders?status=${status}&page=${page}&limit=${limit}`, token);
+/**
+ * Danh sách đơn phía quản trị.
+ * @param search  khớp mã đơn / tên người nhận / số điện thoại / tên khách hàng
+ * @param from,to lọc theo ngày đặt hàng, dạng YYYY-MM-DD
+ */
+export const adminGetOrders = (
+    token,
+    { status = "", search = "", from = "", to = "", page = 1, limit = 20 } = {}
+) => {
+    const params = new URLSearchParams({ status, page, limit });
+    if (search) params.set("search", search);
+    if (from) params.set("from", from);
+    if (to) params.set("to", to);
+    return authFetch(`/admin/orders?${params}`, token);
+};
 
 export const adminMarkPaid = (token, orderId, note = "") =>
     authFetch(`/admin/orders/${orderId}/mark-paid`, token, {

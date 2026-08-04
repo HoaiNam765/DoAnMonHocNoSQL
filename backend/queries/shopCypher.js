@@ -254,9 +254,25 @@ RETURN o.order_id AS order_id, o.status AS status, o.total AS total
 // ĐƠN HÀNG — PHÍA ADMIN
 // ---------------------------------------------------------------------------
 
+/**
+ * Danh sách đơn cho trang quản trị, có lọc trạng thái + tìm kiếm + lọc ngày.
+ *
+ * Tìm kiếm khớp trên: mã đơn, tên người nhận, số điện thoại và tên khách hàng —
+ * đây là những thứ nhân viên có trong tay khi khách gọi điện hỏi về đơn.
+ *
+ * Lọc ngày dựa trên ngày ĐẶT hàng (created_at), không phải ngày thanh toán,
+ * vì nhân viên thường tra theo mốc "khách đặt hôm nào".
+ */
 const ADMIN_ORDER_LIST = `
 MATCH (c:Customer)-[:PLACED]->(o:Order)
-WHERE $status = '' OR o.status = $status
+WHERE ($status = '' OR o.status = $status)
+  AND ($search = ''
+       OR toLower(o.order_id)      CONTAINS $search
+       OR toLower(o.receiver_name) CONTAINS $search
+       OR toLower(o.phone)         CONTAINS $search
+       OR toLower(coalesce(c.customer_name, '')) CONTAINS $search)
+  AND ($fromDate IS NULL OR date(o.created_at) >= date($fromDate))
+  AND ($toDate   IS NULL OR date(o.created_at) <= date($toDate))
 OPTIONAL MATCH (o)-[ct:CONTAINS]->(:Product)
 WITH c, o, count(ct) AS item_count
 RETURN o.order_id       AS order_id,
@@ -274,8 +290,15 @@ SKIP $skip LIMIT $limit
 `;
 
 const ADMIN_ORDER_COUNT = `
-MATCH (:Customer)-[:PLACED]->(o:Order)
-WHERE $status = '' OR o.status = $status
+MATCH (c:Customer)-[:PLACED]->(o:Order)
+WHERE ($status = '' OR o.status = $status)
+  AND ($search = ''
+       OR toLower(o.order_id)      CONTAINS $search
+       OR toLower(o.receiver_name) CONTAINS $search
+       OR toLower(o.phone)         CONTAINS $search
+       OR toLower(coalesce(c.customer_name, '')) CONTAINS $search)
+  AND ($fromDate IS NULL OR date(o.created_at) >= date($fromDate))
+  AND ($toDate   IS NULL OR date(o.created_at) <= date($toDate))
 RETURN count(o) AS total
 `;
 

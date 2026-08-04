@@ -5,6 +5,7 @@ import Loading from "../../components/Loading";
 import ErrorMessage from "../../components/ErrorMessage";
 import AdminSidebar from "../../components/admin/AdminSidebar";
 import AdminStatCard from "../../components/admin/AdminStatCard";
+import { useDebounce } from "../../hooks/useDebounce";
 import {
     getAdminStats, getAdminCategories, createCategory, updateCategory, deleteCategory,
     getAdminProducts, createProduct, updateProduct, deleteProduct,
@@ -36,6 +37,14 @@ function AdminDashboard() {
     const [selectedUser, setSelectedUser] = useState(null);
     const [checkingAccess, setCheckingAccess] = useState(true);
     const [statsRefreshKey, setStatsRefreshKey] = useState(0);
+
+    // Chỉ gọi API sau khi người dùng ngừng gõ 400ms, thay vì mỗi lần bấm phím
+    const debouncedSearch = useDebounce(search, 400);
+
+    // Phân biệt "lần tải đầu tiên" với "tải lại do đổi bộ lọc".
+    // Lần đầu mới thay cả khối bằng màn hình chờ; các lần sau giữ nguyên nội
+    // dung để ô tìm kiếm không bị gỡ khỏi cây React và mất con trỏ nhập.
+    const [firstLoadDone, setFirstLoadDone] = useState(false);
 
     useEffect(() => {
         if (authLoading) return;
@@ -75,7 +84,7 @@ function AdminDashboard() {
                     if (!cancelled) setCategories(result.data || []);
                 } else if (section === "products") {
                     const [result, categoryResult] = await Promise.all([
-                        getAdminProducts(token, { page, limit: 8, search }),
+                        getAdminProducts(token, { page, limit: 8, search: debouncedSearch }),
                         getAdminCategories(token),
                     ]);
                     if (!cancelled) {
@@ -83,18 +92,21 @@ function AdminDashboard() {
                         setCategories(categoryResult.data || []);
                     }
                 } else {
-                    const result = await getAdminUsers(token, { page, limit: 8, search });
+                    const result = await getAdminUsers(token, { page, limit: 8, search: debouncedSearch });
                     if (!cancelled) setUsers(result);
                 }
             } catch (loadError) {
                 if (!cancelled) setError(loadError.message);
             } finally {
-                if (!cancelled) setBusy(false);
+                if (!cancelled) {
+                    setBusy(false);
+                    setFirstLoadDone(true);
+                }
             }
         };
         load();
         return () => { cancelled = true; };
-    }, [token, section, page, search, statsRefreshKey]);
+    }, [token, section, page, debouncedSearch, statsRefreshKey]);
 
     if (authLoading || checkingAccess) return <Loading />;
     if (!user) return <Navigate to="/login" replace />;
@@ -148,7 +160,16 @@ function AdminDashboard() {
             <main className="admin-main">
                 <header className="admin-topbar"><div><span className="eyebrow">ADMINISTRATION / 2026</span><h1>{section === "overview" ? "Tổng quan vận hành" : section === "products" ? "Kho sản phẩm" : section === "categories" ? "Danh mục" : "Người dùng"}</h1></div><div className="admin-profile"><span className="profile-dot">{(customer?.customer_name || "A").slice(0, 1).toUpperCase()}</span><span>{customer?.customer_name || user.email}</span></div></header>
                 {error && <ErrorMessage error={new Error(error)} onRetry={() => setError("")} />}
-                {busy ? <Loading /> : (
+                {/* Đang tải lại (đổi từ khoá, đổi trang) thì chỉ hiện thanh mảnh
+                    phía trên, KHÔNG thay thế nội dung — nếu thay, ô tìm kiếm bị
+                    gỡ khỏi cây React và người dùng mất con trỏ sau mỗi ký tự. */}
+                {busy && firstLoadDone && (
+                    <div style={{ padding: "6px 0", color: "#64748b", fontSize: "13px" }}>
+                        Đang tải dữ liệu...
+                    </div>
+                )}
+
+                {busy && !firstLoadDone ? <Loading /> : (
                     <>
                         {section === "overview" && <Overview stats={stats} onNavigate={changeSection} />}
                         {section === "orders" && <AdminOrders onOrderChanged={() => setStatsRefreshKey((value) => value + 1)} />}

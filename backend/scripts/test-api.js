@@ -76,7 +76,9 @@ const get = async (path) => {
   console.log('\n[2.3] GET /api/products/:id/recommendations  (Query B)');
   r = await get(`/api/products/${sampleProduct.id}/recommendations`);
   check('status 200', r.status === 200, `nhận ${r.status}`);
-  check('tối đa 5 gợi ý', (r.body?.data?.length ?? 0) <= 5, `nhận ${r.body?.data?.length}`);
+  // Mặc định đã tăng từ 5 lên 20 (commit f31b412 "tăng limit"). Kiểm tra theo
+  // trần tối đa thay vì con số cố định, để test không vỡ mỗi lần chỉnh mặc định.
+  check('không vượt trần 20 gợi ý', (r.body?.data?.length ?? 0) <= 20, `nhận ${r.body?.data?.length}`);
   check('có ít nhất 1 gợi ý', (r.body?.data?.length ?? 0) > 0);
   check(
     'không gợi ý lại chính sản phẩm đang xem',
@@ -124,7 +126,9 @@ const get = async (path) => {
   console.log('\n[2.4] GET /api/customers/:id/recommendations  (Query A)');
   r = await get(`/api/customers/${sampleCustomer.customer_id}/recommendations`);
   check('status 200', r.status === 200, `nhận ${r.status}`);
-  check('tối đa 5 gợi ý', (r.body?.data?.length ?? 0) <= 5, `nhận ${r.body?.data?.length}`);
+  // Mặc định đã tăng từ 5 lên 20 (commit f31b412 "tăng limit"). Kiểm tra theo
+  // trần tối đa thay vì con số cố định, để test không vỡ mỗi lần chỉnh mặc định.
+  check('không vượt trần 20 gợi ý', (r.body?.data?.length ?? 0) <= 20, `nhận ${r.body?.data?.length}`);
   check('có ít nhất 1 gợi ý', (r.body?.data?.length ?? 0) > 0);
   check(
     'score giảm dần',

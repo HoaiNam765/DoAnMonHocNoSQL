@@ -5,7 +5,7 @@ import { syncUser } from "../services/authService";
 import { getFriendlyErrorMessage, SILENT_CODES } from "../utils/authErrors";
 
 function Login() {
-    const { login, loginWithGoogle, blockedMessage, clearBlockedMessage } = useAuth();
+    const { login, loginWithGoogle, blockedMessage, clearBlockedMessage, timeoutMessage, clearTimeoutMessage } = useAuth();
     const navigate = useNavigate();
 
     const [email, setEmail] = useState("");
@@ -24,6 +24,7 @@ function Login() {
         try {
             setError("");
             clearBlockedMessage();
+            clearTimeoutMessage();
             setLoading(true);
             const userCredential = await login(email, password);
             await navigateAfterLogin(userCredential);
@@ -39,6 +40,7 @@ function Login() {
         try {
             setError("");
             clearBlockedMessage();
+            clearTimeoutMessage();
             setLoading(true);
             const userCredential = await loginWithGoogle();
             await navigateAfterLogin(userCredential);
@@ -55,6 +57,24 @@ function Login() {
     return (
         <div style={{ maxWidth: "400px", margin: "40px auto", padding: "20px", border: "1px solid #ddd", borderRadius: "8px" }}>
             <h2 style={{ textAlign: "center", color: "#1976d2" }}>Đăng nhập</h2>
+
+            {/* Phiên hết giờ — giải thích vì sao đang dùng thì bị đăng xuất */}
+            {timeoutMessage && (
+                <div
+                    style={{
+                        background: "#fff8e1",
+                        border: "1px solid #ffe082",
+                        borderRadius: "6px",
+                        padding: "12px 14px",
+                        marginBottom: "14px",
+                    }}
+                >
+                    <strong style={{ color: "#e65100" }}>⏱️ Phiên làm việc đã kết thúc</strong>
+                    <p style={{ margin: "6px 0 0", color: "#666", fontSize: "14px" }}>
+                        {timeoutMessage}
+                    </p>
+                </div>
+            )}
 
             {/* Tài khoản vừa bị quản trị viên khoá — giải thích vì sao bị đăng xuất */}
             {blockedMessage && (

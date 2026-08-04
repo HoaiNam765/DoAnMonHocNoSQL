@@ -10,6 +10,7 @@ import {
 } from "firebase/auth";
 import { auth } from "../config/firebase";
 import { syncUser } from "../services/authService";
+import { useSessionTimeout, clearSessionMarks, SESSION_LIMITS } from "../hooks/useSessionTimeout";
 
 const AuthContext = createContext();
 
@@ -19,6 +20,8 @@ export function AuthProvider({ children }) {
     const [loading, setLoading] = useState(true);
     // Thông báo khi tài khoản bị khoá — trang Login đọc để hiện lý do bị đăng xuất
     const [blockedMessage, setBlockedMessage] = useState("");
+    // Thông báo khi phiên hết giờ — trang Login đọc để giải thích vì sao bị đăng xuất
+    const [timeoutMessage, setTimeoutMessage] = useState("");
 
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -86,8 +89,26 @@ export function AuthProvider({ children }) {
     };
 
     const logout = async () => {
+        clearSessionMarks(); // phiên sau đếm lại từ đầu
         return signOut(auth);
     };
+
+    /**
+     * Hết giờ phiên → đăng xuất và giải thích lý do ở trang đăng nhập.
+     * Không dùng alert vì có thể nổ ra khi người dùng đang ở tab khác.
+     */
+    const handleSessionTimeout = useCallback(async (reason) => {
+        setTimeoutMessage(
+            reason === "absolute"
+                ? `Phiên đăng nhập đã quá ${SESSION_LIMITS.absoluteHours} giờ. Vui lòng đăng nhập lại.`
+                : `Bạn đã không thao tác quá ${SESSION_LIMITS.idleSeconds} giây nên hệ thống tự đăng xuất để bảo vệ tài khoản.`
+        );
+        clearSessionMarks();
+        await signOut(auth);
+    }, []);
+
+    // Chỉ đếm giờ khi đã đăng nhập
+    useSessionTimeout({ enabled: Boolean(user), onTimeout: handleSessionTimeout });
 
     return (
         <AuthContext.Provider
@@ -97,6 +118,8 @@ export function AuthProvider({ children }) {
                 loading,
                 blockedMessage,
                 clearBlockedMessage: () => setBlockedMessage(""),
+                timeoutMessage,
+                clearTimeoutMessage: () => setTimeoutMessage(""),
                 register,
                 login,
                 loginWithGoogle,

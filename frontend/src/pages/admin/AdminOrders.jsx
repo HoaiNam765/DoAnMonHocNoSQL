@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import ErrorMessage from "../../components/ErrorMessage";
 import OrderItemsModal from "../../components/admin/OrderItemsModal";
+import { useDebounce } from "../../hooks/useDebounce";
 import {
     adminGetOrders,
     adminMarkPaid,
@@ -41,12 +42,19 @@ function AdminOrders({ onOrderChanged }) {
     const [retryCount, setRetryCount] = useState(0);
     const [viewingOrderId, setViewingOrderId] = useState(null);
 
+    // Bộ lọc tìm kiếm: từ khoá + khoảng ngày đặt
+    const [search, setSearch] = useState("");
+    const [range, setRange] = useState({ from: "", to: "" });
+    const debouncedSearch = useDebounce(search, 400);
+    // Giữ nội dung bảng khi đang tải lại, tránh ô tìm kiếm bị gỡ mất con trỏ
+    const [firstLoadDone, setFirstLoadDone] = useState(false);
+
     const load = useCallback(async () => {
         try {
             setLoading(true);
             setError(null);
             const token = await user.getIdToken();
-            const result = await adminGetOrders(token, { status, page });
+            const result = await adminGetOrders(token, { status, page, search: debouncedSearch, ...range });
             setOrders(result.data || []);
             setPagination(result.pagination);
         } catch (err) {
@@ -55,8 +63,9 @@ function AdminOrders({ onOrderChanged }) {
             setOrders([]);
         } finally {
             setLoading(false);
+            setFirstLoadDone(true);
         }
-    }, [user, status, page, retryCount]);
+    }, [user, status, page, retryCount, debouncedSearch, range]);
 
     useEffect(() => {
         load();
@@ -126,7 +135,70 @@ function AdminOrders({ onOrderChanged }) {
                 ))}
             </div>
 
-            {loading ? (
+            {/* Thanh tìm kiếm + lọc ngày. Luôn hiển thị, KHÔNG nằm trong nhánh
+                loading — nếu bị gỡ mỗi lần tải lại thì gõ được đúng 1 ký tự
+                rồi mất con trỏ. */}
+            <div style={searchBar}>
+                <input
+                    value={search}
+                    onChange={(e) => {
+                        setSearch(e.target.value);
+                        setPage(1);
+                    }}
+                    placeholder="Tìm mã đơn, họ tên, số điện thoại..."
+                    style={{ ...searchInput, flex: "1 1 280px" }}
+                />
+
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                    <span style={{ color: "#64748b", fontSize: "13px" }}>Ngày đặt</span>
+                    <input
+                        type="date"
+                        value={range.from}
+                        onChange={(e) => {
+                            setRange({ ...range, from: e.target.value });
+                            setPage(1);
+                        }}
+                        style={searchInput}
+                    />
+                    <span style={{ color: "#94a3b8" }}>→</span>
+                    <input
+                        type="date"
+                        value={range.to}
+                        onChange={(e) => {
+                            setRange({ ...range, to: e.target.value });
+                            setPage(1);
+                        }}
+                        style={searchInput}
+                    />
+                </div>
+
+                {(search || range.from || range.to) && (
+                    <button
+                        onClick={() => {
+                            setSearch("");
+                            setRange({ from: "", to: "" });
+                            setPage(1);
+                        }}
+                        style={clearButton}
+                    >
+                        ✕ Xoá lọc
+                    </button>
+                )}
+
+                {pagination && (
+                    <span style={{ color: "#64748b", fontSize: "13px", marginLeft: "auto" }}>
+                        {pagination.total} đơn
+                    </span>
+                )}
+            </div>
+
+            {loading && firstLoadDone && (
+                <div style={{ padding: "6px 0", color: "#64748b", fontSize: "13px" }}>
+                    Đang tải đơn hàng...
+                </div>
+            )}
+
+            {loading && !firstLoadDone ? (
                 <div className="empty-state">Đang tải đơn hàng...</div>
             ) : error ? (
                 <div style={{ marginTop: "24px" }}>
@@ -135,7 +207,7 @@ function AdminOrders({ onOrderChanged }) {
             ) : orders.length === 0 ? (
                 <div style={emptyStyle}>
                     <div style={{ fontSize: "48px" }}>📭</div>
-                    <p>Không có đơn hàng nào ở trạng thái này.</p>
+                    <p>{search || range.from || range.to ? "Không tìm thấy đơn hàng nào khớp bộ lọc." : "Không có đơn hàng nào ở trạng thái này."}</p>
                 </div>
             ) : (
                 <div className="panel table-panel" style={{ overflowX: "auto" }}>
@@ -303,6 +375,35 @@ const viewButton = {
     cursor: "pointer",
     fontWeight: "bold",
     whiteSpace: "nowrap",
+};
+
+const searchBar = {
+    display: "flex",
+    gap: "12px",
+    alignItems: "center",
+    flexWrap: "wrap",
+    marginBottom: "16px",
+    padding: "12px",
+    background: "#f8fafc",
+    borderRadius: "10px",
+};
+
+const searchInput = {
+    padding: "8px 12px",
+    border: "1px solid #cbd5e1",
+    borderRadius: "8px",
+    fontSize: "14px",
+    color: "#334155",
+};
+
+const clearButton = {
+    padding: "8px 14px",
+    border: "1px solid #cbd5e1",
+    background: "white",
+    borderRadius: "8px",
+    cursor: "pointer",
+    fontSize: "13px",
+    color: "#64748b",
 };
 
 const emptyStyle = { textAlign: "center", padding: "60px 20px", color: "#888" };
