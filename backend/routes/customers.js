@@ -145,7 +145,7 @@ router.get(
   '/:id/recommendations',
   asyncHandler(async (req, res) => {
     const customerId = String(req.params.id);
-    const limit = Math.min(Math.max(1, parseInt(req.query.limit, 10) || 5), MAX_RECOMMENDATIONS);
+    const limit = Math.min(Math.max(1, parseInt(req.query.limit, 10) || 20), MAX_RECOMMENDATIONS);
 
     const customer = await readQuery(q.GET_CUSTOMER_BY_ID, { customerId });
     if (customer.length === 0) {

@@ -511,6 +511,40 @@
     font-size: 11px;
 }
 
+.inventory-alert-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+
+    padding: 13px 0;
+
+    border-bottom: 1px solid #edf0ed;
+}
+
+.inventory-alert-row .product-cell {
+    flex: 1;
+    min-width: 0;
+}
+
+.inventory-meta {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+    min-width: 110px;
+}
+
+.inventory-meta b {
+    font-size: 12px;
+}
+
+.inventory-meta span {
+    color: #94a29a;
+    font-size: 10px;
+    text-align: right;
+}
+
 /* ==========================================================
    ACTIVITY
 ========================================================== */
@@ -754,6 +788,36 @@ code {
 
 .row-actions button:hover {
     color: #263d32;
+}
+
+.icon-button {
+    display: inline-grid;
+    place-items: center;
+
+    width: 26px;
+    height: 26px;
+
+    margin-left: 6px;
+
+    border: 1px solid #dfe8df;
+    border-radius: 999px;
+
+    background: #f8faf7;
+
+    color: #4b5f4c;
+    font-size: 12px;
+
+    cursor: pointer;
+}
+
+.icon-button:hover {
+    background: #eef5e6;
+}
+
+.user-status-cell {
+    display: flex;
+    align-items: center;
+    gap: 6px;
 }
 
 .danger-text {

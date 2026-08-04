@@ -6,6 +6,7 @@ import ErrorMessage from "../components/ErrorMessage";
 import {
     getOrderDetail,
     cancelOrder,
+    confirmOrderPaid,
     formatPrice,
     formatDate,
     statusInfo,
@@ -25,6 +26,7 @@ function OrderDetail() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [cancelling, setCancelling] = useState(false);
+    const [confirming, setConfirming] = useState(false);
     const [retryCount, setRetryCount] = useState(0);
 
     const load = useCallback(async () => {
@@ -59,6 +61,21 @@ function OrderDetail() {
             alert(err.message || "Không huỷ được đơn.");
         } finally {
             setCancelling(false);
+        }
+    };
+
+    const handleConfirmPaid = async () => {
+        if (!window.confirm("Xác nhận bạn đã thanh toán đơn này bằng ZaloPay?")) return;
+        try {
+            setConfirming(true);
+            const token = await user.getIdToken();
+            await confirmOrderPaid(token, orderId);
+            await load();
+        } catch (err) {
+            console.error(err);
+            alert(err.message || "Không xác nhận được thanh toán.");
+        } finally {
+            setConfirming(false);
         }
     };
 
@@ -147,9 +164,16 @@ function OrderDetail() {
             </div>
 
             {isPending && (
-                <button onClick={handleCancel} disabled={cancelling} style={cancelButton}>
-                    {cancelling ? "Đang huỷ..." : "Huỷ đơn hàng"}
-                </button>
+                <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", marginTop: "24px" }}>
+                    {order.payment_method === "ZALOPAY" && (
+                        <button onClick={handleConfirmPaid} disabled={confirming} style={confirmButton}>
+                            {confirming ? "Đang xác nhận..." : "✅ Xác nhận đã thanh toán"}
+                        </button>
+                    )}
+                    <button onClick={handleCancel} disabled={cancelling} style={cancelButton}>
+                        {cancelling ? "Đang huỷ..." : "Huỷ đơn hàng"}
+                    </button>
+                </div>
             )}
         </>
     );
@@ -212,11 +236,20 @@ const thumbStyle = { width: "64px", height: "64px", objectFit: "cover", borderRa
 const infoBox = { border: "1px solid #eee", borderRadius: "10px", padding: "16px" };
 
 const cancelButton = {
-    marginTop: "24px",
     padding: "12px 24px",
     background: "white",
     color: "#c62828",
     border: "1px solid #c62828",
+    borderRadius: "6px",
+    cursor: "pointer",
+    fontWeight: "bold",
+};
+
+const confirmButton = {
+    padding: "12px 24px",
+    background: "#2e7d32",
+    color: "white",
+    border: "none",
     borderRadius: "6px",
     cursor: "pointer",
     fontWeight: "bold",

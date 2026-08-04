@@ -210,6 +210,25 @@ RETURN o.order_id AS order_id,
        c.customer_id AS customer_id
 `;
 
+const ORDER_CONFIRM_PAID_BY_CUSTOMER = `
+MATCH (c:Customer {customer_id: $customerId})-[:PLACED]->(o:Order {order_id: $orderId})
+WHERE o.status = 'PENDING' AND o.payment_method = 'ZALOPAY'
+SET o.status    = 'PAID',
+    o.paid_at   = datetime(),
+    o.paid_note = 'Khách xác nhận thanh toán qua ZaloPay'
+
+WITH c, o
+MATCH (o)-[:CONTAINS]->(p:Product)
+MERGE (c)-[b:BOUGHT]->(p)
+  ON CREATE SET b.rating_stars = 5, b.bought_at = datetime()
+
+WITH DISTINCT o, c
+RETURN o.order_id AS order_id,
+       o.status   AS status,
+       o.total    AS total,
+       c.customer_id AS customer_id
+`;
+
 /** Đổi trạng thái đơn (admin dùng: COMPLETED / CANCELLED). */
 const ORDER_UPDATE_STATUS = `
 MATCH (o:Order {order_id: $orderId})
@@ -311,6 +330,7 @@ module.exports = {
   ORDER_COUNT_BY_CUSTOMER,
   ORDER_GET_DETAIL,
   ORDER_MARK_PAID,
+  ORDER_CONFIRM_PAID_BY_CUSTOMER,
   ORDER_UPDATE_STATUS,
   ORDER_CANCEL,
   ORDER_FIND_PENDING,

@@ -12,6 +12,13 @@ const { requireAdmin } = require('../middleware/adminAuth');
 
 const router = express.Router();
 
+const randomStock = () => 100 + Math.floor(Math.random() * 101);
+const resolveStock = (value) => {
+  const parsed = Number(value);
+  if (Number.isFinite(parsed)) return Math.max(0, Math.round(parsed));
+  return randomStock();
+};
+
 // Bắt buộc xác thực Admin cho tất cả các endpoint trong router này
 router.use(requireAdmin);
 
@@ -156,7 +163,7 @@ router.get(
 router.post(
   '/products',
   asyncHandler(async (req, res) => {
-    const { title, final_price, rating = 5.0, image, category_id, stock = 100 } = req.body;
+    const { title, final_price, rating = 5.0, image, category_id, stock } = req.body;
 
     if (!title || final_price === undefined || !category_id) {
       throw new HttpError(400, 'Vui lòng điền đầy đủ tiêu đề, giá bán và danh mục');
@@ -170,7 +177,7 @@ router.post(
       finalPrice: Number(final_price),
       rating: Number(rating),
       image: image || 'https://via.placeholder.com/300',
-      stock: Number(stock),
+      stock: resolveStock(stock),
       categoryId: String(category_id).trim(),
     });
 
@@ -194,7 +201,7 @@ router.put(
       finalPrice: Number(final_price),
       rating: Number(rating || 5.0),
       image: image || 'https://via.placeholder.com/300',
-      stock: Number(stock || 100),
+      stock: resolveStock(stock),
       status,
       categoryId: String(category_id).trim(),
     });
@@ -424,8 +431,8 @@ router.get(
   '/revenue',
   asyncHandler(async (req, res) => {
     const groupBy = String(req.query.groupBy ?? 'month').toLowerCase();
-    if (!['month', 'day'].includes(groupBy)) {
-      throw new HttpError(400, "groupBy phải là 'month' hoặc 'day'");
+    if (!['month', 'day', 'year'].includes(groupBy)) {
+      throw new HttpError(400, "groupBy phải là 'month', 'day' hoặc 'year'");
     }
 
     const isDate = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v);
