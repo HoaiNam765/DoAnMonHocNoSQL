@@ -1,5 +1,6 @@
 import Header from "./Header";
 import { Outlet } from "react-router-dom";
+import ChatWidget from "../components/ChatWidget";
 
 function MainLayout() {
     return (
@@ -13,6 +14,9 @@ function MainLayout() {
             >
                 <Outlet />
             </main>
+
+            {/* Trợ lý tư vấn — nổi ở góc phải, dùng chung cho mọi trang khách hàng */}
+            <ChatWidget />
         </>
     );
 }

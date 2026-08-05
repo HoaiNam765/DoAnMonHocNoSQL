@@ -147,3 +147,25 @@ Nguyên nhân là `AdminDashboard` kiểm tra `customer.role` quá sớm. Khi ro
 - Lệnh `npm.cmd run build` tại thư mục `frontend` chạy thành công.
 - Route `/admin` đã được tích hợp vào React Router.
 - Các API Admin sử dụng Bearer Token, không dùng customer ID tùy ý từ client để xác thực quyền.
+
+## Chatbot tư vấn khách hàng
+
+**File mới:**
+- `frontend/src/components/ChatWidget.jsx` — khung chat nổi góc phải.
+- `frontend/src/services/chatService.js` — gọi `POST /api/chat`.
+
+**File cập nhật:**
+- `frontend/src/layouts/MainLayout.jsx` — gắn `<ChatWidget />` để mọi trang khách hàng đều có.
+
+### Cách hoạt động
+
+Khách hỏi bằng lời (ví dụ "áo thun dưới 500k", "shop có danh mục nào"), backend
+tra Neo4j rồi trả về câu trả lời kèm danh sách sản phẩm. Giao diện dựng thẻ sản
+phẩm ngay trong khung chat, mỗi thẻ có ảnh, giá, đánh giá và nút **Thêm vào giỏ**.
+
+Nút Thêm vào giỏ dùng chung `useCart().addItem` với `ProductCard` nên số lượng
+trên biểu tượng giỏ ở Header tự cập nhật. Chưa đăng nhập thì chuyển sang trang
+đăng nhập, giống hệt hành vi của thẻ sản phẩm thường. Hết hàng thì nút bị khoá.
+
+**Không gọi Gemini trực tiếp từ frontend**: API key nằm ở backend, nếu để trong
+mã frontend thì ai mở DevTools cũng lấy được và dùng hết hạn mức.

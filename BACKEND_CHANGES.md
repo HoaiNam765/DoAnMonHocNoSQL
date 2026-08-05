@@ -250,3 +250,87 @@ Các query đều dùng tham số Cypher, không ghép trực tiếp dữ liệu
 - Endpoint gốc `/` đã liệt kê nhóm Admin endpoints.
 - Các endpoint Admin không làm thay đổi hành vi các API public cũ.
 - Frontend production build thành công sau khi tích hợp Admin Dashboard.
+
+## 6. Chatbot tư vấn khách hàng (Gemini)
+
+**File mới:**
+- `backend/queries/chatCypher.js` — chỉ chứa câu lệnh ĐỌC (`CHAT_SEARCH_PRODUCTS`, `CHAT_LIST_CATEGORIES`).
+- `backend/services/geminiChat.js` — cầu nối giữa Gemini và Neo4j theo cơ chế function calling.
+- `backend/routes/chat.js` — `POST /api/chat`.
+
+**File cập nhật:**
+- `backend/server.js` — mount `/api/chat`.
+- `backend/.env` / `.env.example` — thêm `GEMINI_API_KEY`, `GEMINI_MODEL`.
+
+### Vì sao an toàn
+
+Mô hình ngôn ngữ **không bao giờ sinh Cypher**. Nó chỉ được điền giá trị vào
+tham số `$...` của hai câu lệnh đọc viết sẵn. Danh sách công cụ khai báo cho
+Gemini chỉ có `search_products` và `list_categories` — không có công cụ ghi nào,
+nên chatbot không thể thêm/sửa/xoá sản phẩm kể cả khi bị dụ.
+
+Việc thêm vào giỏ do **khách tự bấm nút** trên thẻ sản phẩm, đi qua đúng API
+giỏ hàng có xác thực như mọi chỗ khác — chatbot không tự thao tác thay khách.
+
+### Chống bịa dữ liệu
+
+Đo thực tế thấy mô hình có lúc trả lời về sản phẩm mà không hề tra cứu. Đã xử lý:
+1. Cấm rõ trong system prompt: chưa gọi công cụ thì không được nêu tên/giá nào.
+2. Lưới an toàn trong code: nếu chưa tra cứu lần nào mà câu trả lời đã chứa chữ
+   số, backend bỏ câu đó và ép mô hình tra cứu lại (`functionCallingConfig.mode = ANY`).
+
+### Hạn mức API (đo thực tế trên gói miễn phí)
+
+| Model | Giới hạn | Ghi chú |
+|---|---|---|
+| `gemini-2.5-flash-lite` | 20 req/phút | **Đang dùng** |
+| `gemini-2.5-flash` | 5 req/phút | Quá thấp, mỗi câu hỏi tốn ~2 lượt gọi |
+| `gemini-2.0-flash` | 0 | Bị khoá trên gói miễn phí |
+
+Mỗi câu hỏi đi qua Gemini tốn khoảng 2 lượt gọi API (một lượt chọn công cụ, một
+lượt viết câu trả lời) — tức chỉ khoảng 10 câu/phút cho toàn hệ thống. Gặp lỗi
+503 (Google quá tải nhất thời) thì tự thử lại một lần.
+
+Con số đó quá thấp để demo, nên đã bổ sung kiến trúc bốn tầng ở mục 7.
+
+## 7. Bốn tầng trả lời — để demo không bị "trợ lý đang quá tải"
+
+**File mới:**
+- `backend/services/quickParse.js` — hiểu câu hỏi bằng biểu thức chính quy, không cần AI.
+- `backend/services/chatAssistant.js` — điều phối bốn tầng + bộ nhớ đệm + ngân sách Gemini.
+
+Câu hỏi đi lần lượt qua bốn tầng, rẻ trước đắt sau:
+
+| Tầng | Xử lý gì | Lượt gọi Gemini | Thời gian đo được |
+|---|---|---|---|
+| 1. Bộ nhớ đệm | Câu vừa có người hỏi y hệt (hạn 5 phút) | 0 | ~13 ms |
+| 2. Lọc nhanh | Câu khuôn mẫu: "dưới 500k", "tìm áo thun", "danh mục nào" | 0 | 50–170 ms |
+| 3. Gemini | Câu phức tạp, diễn đạt tự do | ~2 | 2–3 giây |
+| 4. Hạ cấp | Gemini lỗi hoặc hết ngân sách → quay về tầng 2 | 0 | như tầng 2 |
+
+Nhờ tầng 4, khách **không còn nhìn thấy thông báo lỗi kỹ thuật**: xấu nhất là bot
+trả lời cộc hơn nhưng vẫn ra đúng sản phẩm lấy từ Neo4j.
+
+### Lọc nhanh hiểu được những gì
+
+Khoảng giá (`dưới 500k`, `trên 200k`, `từ 100k đến 300k`, `khoảng 200k`, `dưới 1
+triệu`, `500.000`), sắp xếp (`rẻ nhất`, `đắt nhất`), liệt kê danh mục, chào hỏi,
+cảm ơn, và từ chối yêu cầu sửa/xoá dữ liệu. Không chắc thì trả `null` để nhường
+cho Gemini — thà nhờ AI còn hơn đoán bừa rồi trả lời sai.
+
+Khi từ khoá dài mà không ra kết quả, hệ thống rút ngắn dần rồi tìm lại: "nồi cơm
+điện loại tốt cho gia đình 4 người" → không có → thử "nồi cơm điện" → có hàng.
+Có chặn dưới: không rút xuống một chữ ngắn, vì chữ như "tư" là khúc con của rất
+nhiều tên sản phẩm, đưa bừa hàng ra còn tệ hơn nói không tìm thấy.
+
+### Hai giới hạn tần suất, đừng nhầm lẫn
+
+- **Ngân sách Gemini** (`chatAssistant.js`): 8 lượt / 5 phút / IP. Vượt thì hạ cấp
+  xuống tầng 2, **không báo lỗi**. Chỉ đếm câu thật sự nhờ tới AI.
+- **Giới hạn chống lạm dụng** (`routes/chat.js`): 60 lượt / phút / IP, chỉ để
+  chặn vòng lặp gọi API.
+
+Bản đầu đặt chung một giới hạn 20 lượt/5 phút cho mọi request. Thử bắn 18 câu
+đồng thời thì chính giới hạn của mình chặn mất 11 câu — dù không tốn lượt AI nào.
+Đo lại sau khi tách: **18/18 câu trả lời được, 0 lỗi, 0 lượt Gemini, dưới 1 giây**;
+lần chạy thứ hai toàn bộ vào đệm, tổng 112 ms.

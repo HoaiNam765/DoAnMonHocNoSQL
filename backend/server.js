@@ -9,6 +9,7 @@ const authRoutes = require('./routes/auth');
 const adminRoutes = require('./routes/admin');
 const cartRoutes = require('./routes/cart');
 const orderRoutes = require('./routes/orders');
+const chatRoutes = require('./routes/chat');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -46,6 +47,7 @@ app.get('/', (req, res) => {
       'GET    /api/admin/orders?status=',
       'POST   /api/admin/orders/:orderId/mark-paid',
       'ADMIN endpoints at /api/admin/*',
+      'POST   /api/chat',
     ],
   });
 });
@@ -56,6 +58,7 @@ app.use('/api/customers', customerRoutes);
 app.use('/api/cart', cartRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/chat', chatRoutes);
 
 // 404 cho các đường dẫn không khớp route nào
 app.use((req, res) => {
