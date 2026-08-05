@@ -1,0 +1,66 @@
+# Cấu hình deploy BACKEND lên Render (https://render.com).
+#
+# Vì sao backend không đặt trên Vercel: Vercel chạy serverless — mỗi request là
+# một hàm ngắn hạn, không giữ được kết nối lâu và không giữ được biến trong bộ
+# nhớ. Backend này cần cả hai:
+#   - SSE (/api/events/stream) giữ kết nối mở để đẩy sự kiện đơn hàng
+#   - Bộ nhớ tạm cho danh sách kết nối, vé, đệm chat, giới hạn tần suất
+# Render chạy tiến trình liên tục nên giữ được cả hai.
+#
+# Cách dùng: Render → New → Blueprint → trỏ vào repo này.
+# Hoặc tạo Web Service thủ công với đúng các giá trị bên dưới.
+
+services:
+  - type: web
+    name: neo4j-marketplace-api
+    runtime: node
+    plan: free
+    region: singapore # gần Việt Nam nhất
+
+    # Backend nằm trong thư mục con của repo
+    rootDir: DoAnMonHocNoSQL/backend
+    buildCommand: npm install
+    startCommand: npm start
+
+    # Render gọi vào đây để biết dịch vụ còn sống. Endpoint "/" sẵn có trả JSON.
+    healthCheckPath: /
+
+    envVars:
+      # --- Neo4j ---------------------------------------------------------
+      - key: NEO4J_URI
+        sync: false # tự điền trong bảng điều khiển, không ghi vào file này
+      - key: NEO4J_USERNAME
+        sync: false
+      - key: NEO4J_PASSWORD
+        sync: false
+
+      # --- Firebase ------------------------------------------------------
+      # Dán NGUYÊN nội dung file firebase-service-account.json (hoặc bản base64).
+      # Trên Render không tải file lên được nên bắt buộc đi đường này.
+      - key: FIREBASE_SERVICE_ACCOUNT
+        sync: false
+      - key: FIREBASE_WEB_API_KEY
+        sync: false
+
+      # --- Chatbot -------------------------------------------------------
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash-lite
+
+      # --- Thanh toán SePay ----------------------------------------------
+      - key: SEPAY_ACCOUNT_NUMBER
+        sync: false
+      - key: SEPAY_BANK
+        sync: false
+      - key: SEPAY_WEBHOOK_APIKEY
+        sync: false
+
+      # --- Bảo mật -------------------------------------------------------
+      # Danh sách tên miền frontend được phép gọi API, ngăn cách bởi dấu phẩy.
+      # Bỏ trống là mở cho MỌI tên miền — đừng để trống khi chạy thật.
+      - key: CORS_ORIGIN
+        sync: false
+
+      - key: NODE_ENV
+        value: production

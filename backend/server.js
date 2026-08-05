@@ -17,7 +17,38 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Middlewares
-app.use(cors());
+//
+// CORS: chạy ở máy mình thì mở cho tất cả cho tiện (địa chỉ LAN đổi liên tục khi
+// bạn bè vào thử bằng điện thoại). Lên server thật thì PHẢI giới hạn — để mở
+// nghĩa là bất kỳ trang web nào cũng gọi được API này bằng phiên đăng nhập của
+// khách đang mở tab.
+//
+// Khai báo CORS_ORIGIN bằng danh sách tên miền, ngăn cách bởi dấu phẩy:
+//   CORS_ORIGIN=https://shop.vercel.app,https://shop-git-main.vercel.app
+const danhSachOrigin = String(process.env.CORS_ORIGIN ?? '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+if (danhSachOrigin.length > 0) {
+  app.use(
+    cors({
+      origin: (origin, callback) => {
+        // Không có origin = gọi từ curl, Postman, hoặc chính máy chủ — cho qua.
+        // Webhook của SePay cũng rơi vào nhóm này.
+        if (!origin || danhSachOrigin.includes(origin)) return callback(null, true);
+        return callback(new Error(`CORS: tên miền ${origin} không được phép`));
+      },
+    })
+  );
+  console.log(`🔒 [CORS] Chỉ cho phép: ${danhSachOrigin.join(', ')}`);
+} else {
+  app.use(cors());
+  if (process.env.NODE_ENV === 'production') {
+    console.warn('⚠️  [CORS] Đang mở cho MỌI tên miền. Hãy khai báo CORS_ORIGIN khi chạy thật.');
+  }
+}
+
 app.use(express.json());
 
 // Routes
