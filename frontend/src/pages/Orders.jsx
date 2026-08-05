@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import ErrorMessage from "../components/ErrorMessage";
 import { getMyOrders, formatPrice, formatDate, statusInfo } from "../services/shopService";
+import { useOrderEvents } from "../hooks/useOrderEvents";
 
 /** Trang "Đơn hàng của tôi" — danh sách đơn đã đặt, mới nhất lên đầu. */
 function Orders() {
@@ -36,6 +37,9 @@ function Orders() {
     useEffect(() => {
         load();
     }, [load]);
+
+    // Nhân viên xác nhận thanh toán thì trạng thái ở đây đổi ngay, khỏi F5
+    useOrderEvents({ user, onChange: load });
 
     if (loading) return <h2>Đang tải đơn hàng...</h2>;
 

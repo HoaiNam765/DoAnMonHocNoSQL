@@ -17,7 +17,11 @@
     "test:admin": "node scripts/test-admin-stats.js",
     "test:block": "node scripts/test-block.js",
     "test:search": "node scripts/test-order-search.js",
-    "test:buynow": "node scripts/test-buynow.js"
+    "test:buynow": "node scripts/test-buynow.js",
+    "test:attrs": "node scripts/test-attributes.js",
+    "test:events": "node scripts/test-events.js",
+    "setup:payment": "node scripts/setup-payment.js",
+    "test:sepay": "node scripts/test-sepay.js"
   },
   "keywords": [],
   "author": "",

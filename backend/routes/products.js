@@ -11,6 +11,7 @@ const {
 } = require('../utils/http');
 const { optionalAuth } = require('../middleware/auth');
 const { parseFilters, maskCustomerName } = require('../utils/filters');
+const { extractCustomAttributes } = require('../utils/productAttributes');
 
 const router = express.Router();
 
@@ -158,7 +159,14 @@ router.get(
       throw new HttpError(404, `Không tìm thấy sản phẩm có id = ${productId}`);
     }
 
-    res.json({ data: rows[0] });
+    // Tách thuộc tính tuỳ ý (do admin tự đặt) ra một chỗ riêng để giao diện biết
+    // đường hiển thị. Bỏ all_props khỏi phản hồi vì phần lõi đã có sẵn từng
+    // trường rồi, gửi thêm chỉ tổ trùng lặp.
+    const { all_props: props, ...coBan } = rows[0];
+
+    res.json({
+      data: { ...coBan, attributes: extractCustomAttributes(props) },
+    });
   })
 );
 

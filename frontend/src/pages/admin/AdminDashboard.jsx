@@ -10,10 +10,11 @@ import {
     getAdminStats, getAdminCategories, createCategory, updateCategory, deleteCategory,
     getAdminProducts, createProduct, updateProduct, deleteProduct,
     getAdminUsers, getUserDetails, updateUserRole, updateUserStatus,
-    getRevenue, getUserOrders,
+    getRevenue, getUserOrders, getProductAttributes, saveProductAttributes,
 } from "../../services/adminService";
 import { statusInfo, formatPrice } from "../../services/shopService";
 import AdminOrders from "./AdminOrders";
+import ProductAttributes from "./ProductAttributes";
 import "./AdminDashboard.css";
 
 const money = (value) => `${Number(value || 0).toLocaleString("vi-VN")} đ`;
@@ -34,6 +35,11 @@ function AdminDashboard() {
     const [page, setPage] = useState(1);
     const [modal, setModal] = useState(null);
     const [form, setForm] = useState(createEmptyProduct());
+
+    // Thuộc tính tuỳ ý của sản phẩm đang sửa.
+    // `attrGoc` giữ bản đọc từ máy chủ để biết thuộc tính nào vừa bị xoá/đổi tên.
+    const [attrDong, setAttrDong] = useState([]);
+    const [attrGoc, setAttrGoc] = useState({});
     const [selectedUser, setSelectedUser] = useState(null);
     const [checkingAccess, setCheckingAccess] = useState(true);
     const [statsRefreshKey, setStatsRefreshKey] = useState(0);
@@ -113,7 +119,7 @@ function AdminDashboard() {
     if (String(customer?.role || "").toLowerCase() !== "admin") return <Navigate to="/" replace />;
 
     const changeSection = (next) => { setSection(next); setPage(1); setSearch(""); setError(""); };
-    const closeModal = () => { setModal(null); setSelectedUser(null); setForm(createEmptyProduct()); };
+    const closeModal = () => { setModal(null); setSelectedUser(null); setForm(createEmptyProduct()); setAttrDong([]); setAttrGoc({}); };
     const saveCategory = async (event) => {
         event.preventDefault();
         try {
@@ -123,16 +129,65 @@ function AdminDashboard() {
             const result = await getAdminCategories(token); setCategories(result.data || []);
         } catch (saveError) { setError(saveError.message); }
     };
+    /**
+     * Dựng map thuộc tính để gửi lên máy chủ.
+     *
+     * Phải kèm cả những thuộc tính ĐÃ BỊ XOÁ hoặc ĐỔI TÊN với giá trị null —
+     * máy chủ chỉ ghi đè theo map nhận được, không tự biết thuộc tính nào vừa
+     * biến mất khỏi form. Thiếu bước này thì xoá một dòng trên giao diện xong
+     * tải lại trang là nó hiện về như cũ.
+     */
+    const dungMapThuocTinh = (dong, goc) => {
+        const map = {};
+
+        dong.forEach((d) => {
+            const ten = String(d.ten ?? "").trim();
+            if (ten) map[ten] = d.giaTri;
+        });
+
+        Object.keys(goc ?? {}).forEach((tenCu) => {
+            if (!(tenCu in map)) map[tenCu] = null; // đã bị xoá hoặc đổi tên
+        });
+
+        return map;
+    };
+
     const saveProduct = async (event) => {
         event.preventDefault();
         try {
             const payload = { ...form, final_price: Number(form.final_price), rating: Number(form.rating), stock: Number(form.stock) };
-            if (modal?.item) await updateProduct(token, modal.item.id, payload); else await createProduct(token, payload);
+
+            let productId = modal?.item?.id;
+            if (productId) await updateProduct(token, productId, payload);
+            else productId = (await createProduct(token, payload))?.data?.id;
+
+            // Lưu thuộc tính tuỳ ý sau khi đã có id (sản phẩm mới thì id vừa sinh ra)
+            const map = dungMapThuocTinh(attrDong, attrGoc);
+            if (productId && Object.keys(map).length > 0) {
+                await saveProductAttributes(token, productId, map);
+            }
+
             closeModal(); setPage(1);
             const result = await getAdminProducts(token, { page: 1, limit: 8, search }); setProducts(result);
         } catch (saveError) { setError(saveError.message); }
     };
-    const openProduct = (item) => { setForm(item ? { ...createEmptyProduct(), ...item } : createEmptyProduct()); setModal({ type: "product", item }); };
+
+    const openProduct = async (item) => {
+        setForm(item ? { ...createEmptyProduct(), ...item } : createEmptyProduct());
+        setAttrDong([]); setAttrGoc({});
+        setModal({ type: "product", item });
+
+        if (!item) return; // sản phẩm mới thì chưa có thuộc tính nào để tải
+
+        try {
+            const result = await getProductAttributes(token, item.id);
+            setAttrGoc(result.data?.attributes ?? {});
+        } catch (err) {
+            // Không tải được thuộc tính thì vẫn cho sửa các trường còn lại,
+            // chỉ là phần thuộc tính tuỳ ý hiện trống.
+            console.error("[Admin] Không tải được thuộc tính sản phẩm:", err);
+        }
+    };
     const openCategory = (item) => { setForm(item ? { ...item } : { category_id: "", category_name: "", status: "active" }); setModal({ type: "category", item }); };
     const openUser = async (item) => { try { const result = await getUserDetails(token, item.customer_id); setSelectedUser(result.data); } catch (loadError) { setError(loadError.message); } };
     const toggleUserStatus = async (id, currentStatus) => {
@@ -180,7 +235,7 @@ function AdminDashboard() {
                 )}
             </main>
             {modal?.type === "category" && <CategoryModal form={form} setForm={setForm} onSubmit={saveCategory} onClose={closeModal} editing={Boolean(modal.item)} />}
-            {modal?.type === "product" && <ProductModal form={form} setForm={setForm} categories={categories} onSubmit={saveProduct} onClose={closeModal} editing={Boolean(modal.item)} />}
+            {modal?.type === "product" && <ProductModal form={form} setForm={setForm} categories={categories} onSubmit={saveProduct} onClose={closeModal} editing={Boolean(modal.item)} attrGoc={attrGoc} onAttrChange={setAttrDong} />}
             {selectedUser && <UserModal user={selectedUser} onClose={() => setSelectedUser(null)} />}
         </div>
     );
@@ -552,7 +607,7 @@ function Users({ users, search, setSearch, page, setPage, onView, onRole, onStat
 
 function Modal({ title, children, onClose }) { return <div className="modal-backdrop" onMouseDown={onClose}><div className="admin-modal" onMouseDown={(event) => event.stopPropagation()}><div className="modal-heading"><h3>{title}</h3><button onClick={onClose}>×</button></div>{children}</div></div>; }
 function CategoryModal({ form, setForm, onSubmit, onClose, editing }) { return <Modal title={editing ? "Chỉnh sửa danh mục" : "Thêm danh mục"} onClose={onClose}><form className="admin-form" onSubmit={onSubmit}><label>Mã danh mục<input disabled={editing} required value={form.category_id || ""} onChange={(event) => setForm({ ...form, category_id: event.target.value })} /></label><label>Tên danh mục<input required value={form.category_name || ""} onChange={(event) => setForm({ ...form, category_name: event.target.value })} /></label>{editing && <label>Trạng thái<select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}><option value="active">Đang hiển thị</option><option value="hidden">Đã ẩn</option></select></label>}<div className="modal-actions"><button type="button" onClick={onClose}>Hủy</button><button className="primary-button" type="submit">Lưu thay đổi</button></div></form></Modal>; }
-function ProductModal({ form, setForm, categories, onSubmit, onClose, editing }) { const update = (key, value) => setForm({ ...form, [key]: value }); return <Modal title={editing ? "Chỉnh sửa sản phẩm" : "Thêm sản phẩm"} onClose={onClose}><form className="admin-form" onSubmit={onSubmit}><label>Tên sản phẩm<input required value={form.title || ""} onChange={(event) => update("title", event.target.value)} /></label><div className="form-grid"><label>Giá bán<input required type="number" min="0" value={form.final_price} onChange={(event) => update("final_price", event.target.value)} /></label><label>Tồn kho<input required type="number" min="0" value={form.stock} onChange={(event) => update("stock", event.target.value)} /></label></div><div className="form-grid"><label>Đánh giá<input type="number" min="0" max="5" step="0.1" value={form.rating} onChange={(event) => update("rating", event.target.value)} /></label><label>Danh mục<select required value={form.category_id || ""} onChange={(event) => update("category_id", event.target.value)}><option value="">Chọn danh mục</option>{categories.map((category) => <option key={category.category_id} value={category.category_id}>{category.category_name}</option>)}</select></label></div><label>Ảnh sản phẩm<input value={form.image || ""} onChange={(event) => update("image", event.target.value)} placeholder="https://..." /></label><div className="modal-actions"><button type="button" onClick={onClose}>Hủy</button><button className="primary-button" type="submit">Lưu sản phẩm</button></div></form></Modal>; }
+function ProductModal({ form, setForm, categories, onSubmit, onClose, editing, attrGoc, onAttrChange }) { const update = (key, value) => setForm({ ...form, [key]: value }); return <Modal title={editing ? "Chỉnh sửa sản phẩm" : "Thêm sản phẩm"} onClose={onClose}><form className="admin-form" onSubmit={onSubmit}><label>Tên sản phẩm<input required value={form.title || ""} onChange={(event) => update("title", event.target.value)} /></label><div className="form-grid"><label>Giá bán<input required type="number" min="0" value={form.final_price} onChange={(event) => update("final_price", event.target.value)} /></label><label>Tồn kho<input required type="number" min="0" value={form.stock} onChange={(event) => update("stock", event.target.value)} /></label></div><div className="form-grid"><label>Đánh giá<input type="number" min="0" max="5" step="0.1" value={form.rating} onChange={(event) => update("rating", event.target.value)} /></label><label>Danh mục<select required value={form.category_id || ""} onChange={(event) => update("category_id", event.target.value)}><option value="">Chọn danh mục</option>{categories.map((category) => <option key={category.category_id} value={category.category_id}>{category.category_name}</option>)}</select></label></div><label>Ảnh sản phẩm<input value={form.image || ""} onChange={(event) => update("image", event.target.value)} placeholder="https://..." /></label><ProductAttributes value={attrGoc} onChange={onAttrChange} /><div className="modal-actions"><button type="button" onClick={onClose}>Hủy</button><button className="primary-button" type="submit">Lưu sản phẩm</button></div></form></Modal>; }
 /**
  * Hồ sơ người dùng phía quản trị.
  *

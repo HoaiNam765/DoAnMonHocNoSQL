@@ -7,6 +7,7 @@ import { useAuth } from "../context/AuthContext";
 import { useCart } from "../context/CartContext";
 import RecommendationList from "../components/RecommendationList";
 import ErrorMessage from "../components/ErrorMessage";
+import AlertDialog from "../components/AlertDialog";
 
 function ProductDetail() {
     const { id } = useParams();
@@ -20,6 +21,12 @@ function ProductDetail() {
     const [buying, setBuying] = useState(false);
     const [quantity, setQuantity] = useState(1);
     const [added, setAdded] = useState(false);
+
+    // Chuỗi khách đang gõ trong ô số lượng, tách khỏi `quantity` đã chuẩn hoá
+    const [soLuongNhap, setSoLuongNhap] = useState("1");
+
+    // Thông báo lỗi thao tác — hiện bằng hộp thoại thay cho alert() của trình duyệt
+    const [thongBao, setThongBao] = useState(null);
 
     const [retryCount, setRetryCount] = useState(0);
 
@@ -52,6 +59,24 @@ function ProductDetail() {
         loadProduct();
     }, [id, user, retryCount]);
 
+    /** Nút +/− đổi số lượng thì ô nhập phải đi theo. */
+    useEffect(() => {
+        setSoLuongNhap(String(quantity));
+    }, [quantity]);
+
+    /** Chuẩn hoá giá trị khách gõ khi rời ô. */
+    const chotSoLuong = () => {
+        const sl = Number(soLuongNhap);
+
+        if (!Number.isInteger(sl) || sl < 1 || sl > 99) {
+            setThongBao("Số lượng phải là số nguyên từ 1 đến 99.");
+            setSoLuongNhap(String(quantity)); // trả về giá trị hợp lệ gần nhất
+            return;
+        }
+
+        setQuantity(sl);
+    };
+
     /** Thêm vào giỏ (nút "Thêm vào giỏ"). */
     const handleAddToCart = async () => {
         if (!user) return navigate("/login");
@@ -63,7 +88,7 @@ function ProductDetail() {
             setTimeout(() => setAdded(false), 1800);
         } catch (err) {
             console.error(err);
-            alert(err.message || "Không thêm được vào giỏ hàng.");
+            setThongBao(err.message || "Không thêm được vào giỏ hàng.");
         } finally {
             setBuying(false);
         }
@@ -173,9 +198,24 @@ function ProductDetail() {
                         >
                             −
                         </button>
-                        <span style={{ minWidth: "36px", textAlign: "center", fontWeight: "bold", fontSize: "18px" }}>
-                            {quantity}
-                        </span>
+
+                        {/* Gõ thẳng số lượng. Giữ nguyên chuỗi khách đang gõ (kể cả
+                            lúc rỗng) rồi mới chuẩn hoá khi rời ô, không thì xoá hết
+                            để gõ số mới là ô tự nhảy về 1 giữa chừng. */}
+                        <input
+                            type="number"
+                            min="1"
+                            max="99"
+                            value={soLuongNhap}
+                            onChange={(e) => setSoLuongNhap(e.target.value)}
+                            onBlur={chotSoLuong}
+                            onKeyDown={(e) => {
+                                if (e.key === "Enter") e.currentTarget.blur();
+                            }}
+                            style={qtyInput}
+                            aria-label="Số lượng mua"
+                        />
+
                         <button
                             onClick={() => setQuantity(Math.min(99, quantity + 1))}
                             disabled={quantity >= 99}
@@ -223,9 +263,36 @@ function ProductDetail() {
                     </div>
                 </div>
             </div>
+            {/* Thuộc tính tuỳ ý do admin thêm — mỗi sản phẩm một bộ khác nhau,
+                không có danh sách cố định nào ở đây. */}
+            {Object.keys(product.attributes ?? {}).length > 0 && (
+                <div style={thuocTinhKhung}>
+                    <h3 style={{ margin: "0 0 14px", fontSize: "18px" }}>Thông tin chi tiết</h3>
+
+                    <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                        <tbody>
+                            {Object.entries(product.attributes).map(([ten, giaTri]) => (
+                                <tr key={ten}>
+                                    <td style={thuocTinhTen}>{ten}</td>
+                                    <td style={thuocTinhGiaTri}>
+                                        {typeof giaTri === "boolean" ? (giaTri ? "Có" : "Không") : String(giaTri)}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+
             <hr style={{ margin: "40px 0" }} />
 
             <RecommendationList productId={id} />
+
+            <AlertDialog
+                open={Boolean(thongBao)}
+                message={thongBao}
+                onClose={() => setThongBao(null)}
+            />
         </>
     );
 }
@@ -238,6 +305,45 @@ const qtyButton = {
     borderRadius: "6px",
     cursor: "pointer",
     fontSize: "20px",
+};
+
+const thuocTinhKhung = {
+    marginTop: "34px",
+    padding: "18px 20px",
+    border: "1px solid #e3e8ef",
+    borderRadius: "10px",
+    background: "#fbfcfe",
+};
+
+const thuocTinhTen = {
+    padding: "9px 12px 9px 0",
+    borderBottom: "1px solid #eef1f5",
+    color: "#6b7a90",
+    fontSize: "14px",
+    width: "34%",
+    verticalAlign: "top",
+    whiteSpace: "nowrap",
+};
+
+const thuocTinhGiaTri = {
+    padding: "9px 0",
+    borderBottom: "1px solid #eef1f5",
+    color: "#1f2d3d",
+    fontSize: "14px",
+    lineHeight: 1.6,
+    whiteSpace: "pre-wrap",
+};
+
+const qtyInput = {
+    width: "64px",
+    height: "36px",
+    textAlign: "center",
+    fontWeight: "bold",
+    fontSize: "17px",
+    border: "1px solid #ccc",
+    borderRadius: "6px",
+    padding: "0 4px",
+    boxSizing: "border-box",
 };
 
 export default ProductDetail;

@@ -234,3 +234,95 @@ nhầm món cũ. Để trên đường dẫn thì F5 vẫn đúng mà vào từ 
 
 Thông tin hiển thị (tên, ảnh, giá) đi kèm qua router state cho đường thường để
 khỏi gọi lại API; mất state thì trang tự tải lại theo mã trên đường dẫn.
+
+## Hộp thoại thông báo + ô nhập số lượng
+
+**File mới:** `components/AlertDialog.jsx`
+
+### Lỗi thao tác không được thay thế cả trang
+
+Trang giỏ hàng trước đây gom mọi lỗi vào một state rồi render `ErrorMessage`
+thay cho toàn bộ nội dung. Hệ quả: khách chỉ bấm dấu cộng vượt tồn kho một cái
+là mất luôn cả giỏ hàng trước mắt, phải bấm "Thử lại" mới thấy lại.
+
+Cần phân biệt hai loại lỗi:
+- **Lỗi tải trang** (không lấy được dữ liệu) → thay cả nội dung là hợp lý.
+- **Lỗi thao tác** (hết hàng, mất mạng lúc bấm) → chỉ hỏng đúng hành động đó,
+  phải giữ nguyên màn hình và báo bằng hộp thoại.
+
+Ở trang giỏ hàng thì `CartContext` đã nuốt lỗi tải và trả giỏ rỗng, nên mọi lỗi
+lọt tới đây đều là lỗi thao tác — không có trường hợp nào đáng thay cả trang.
+
+`AlertDialog` cũng thay cho `alert()` ở trang chi tiết sản phẩm: `alert()` khoá
+cứng cả tab và không đặt được chữ tiếng Việt cho nút.
+
+### Ô nhập số lượng
+
+Giỏ hàng và trang chi tiết sản phẩm nay gõ thẳng được số lượng, vẫn giữ nút +/−.
+
+**Số đang gõ được tách khỏi số lượng thật**, chỉ gửi lên máy chủ khi rời ô hoặc
+bấm Enter. Không tách thì mỗi ký tự lại bắn một lượt gọi API — gõ "10" sẽ thành
+đặt 1 rồi mới đặt 10. Cũng nhờ tách mà xoá trắng ô để gõ số mới không bị nhảy
+về 1 giữa chừng.
+
+Nhập sai (0, quá 99, để trống, chữ cái) thì báo hộp thoại và trả ô về số lượng
+thật, **không gọi API**. Nhập đúng khoảng nhưng vượt tồn kho thì máy chủ từ chối,
+hộp thoại hiện "Chỉ còn N sản phẩm trong kho" và ô cũng trả về giá trị cũ.
+
+## Thuộc tính tuỳ ý của sản phẩm
+
+**File mới:** `pages/admin/ProductAttributes.jsx`
+
+Trong modal sửa sản phẩm, admin thêm được thuộc tính bất kỳ theo cặp tên–giá trị,
+có sẵn vài gợi ý bấm nhanh (Mô tả, Xuất xứ, Bảo hành...) nhưng gõ tên gì cũng được.
+Mỗi dòng hiện nhãn kiểu dữ liệu sẽ được lưu (chữ / số / đúng-sai) để admin thấy
+trước, không bị bất ngờ.
+
+Trang chi tiết sản phẩm hiện các thuộc tính này trong mục "Thông tin chi tiết".
+Sản phẩm chưa có thuộc tính nào thì mục tự ẩn.
+
+**Hai chỗ dễ sai khi sửa tiếp:**
+
+1. Danh sách thuộc tính giữ dạng MẢNG chứ không phải object. Dùng object thì
+   không giữ được dòng đang gõ dở tên, và hai dòng cùng để trống tên sẽ đè nhau.
+
+2. Khi lưu phải gửi kèm những thuộc tính ĐÃ XOÁ hoặc ĐỔI TÊN với giá trị `null`.
+   Máy chủ chỉ ghi đè theo map nhận được, không tự biết thuộc tính nào vừa biến
+   mất khỏi form — thiếu bước này thì xoá một dòng xong tải lại trang là nó hiện
+   về như cũ.
+
+## Cập nhật đơn hàng thời gian thực
+
+**File mới:** `hooks/useOrderEvents.js`
+
+Gắn vào ba trang: `pages/admin/AdminOrders.jsx`, `pages/Orders.jsx`,
+`pages/OrderDetail.jsx`. Mỗi trang vốn đã có sẵn hàm `load` dạng `useCallback`
+nên chỉ cần một dòng `useOrderEvents({ user, onChange: load })`.
+
+Trang chi tiết đơn lọc thêm một bước: chỉ tải lại khi sự kiện nói về ĐÚNG đơn
+đang xem, tránh gọi API thừa khi khách có nhiều đơn khác cùng thay đổi.
+
+**Hai chỗ dễ sai khi sửa tiếp:**
+
+1. `onChange` được giữ trong `useRef`, KHÔNG đưa vào mảng phụ thuộc của
+   `useEffect`. Đưa vào thì mỗi lần trang vẽ lại là một hàm mới → đóng/mở luồng
+   liên tục, vừa tốn vừa dễ sót sự kiện.
+
+2. Khi luồng lỗi phải **đóng hẳn rồi tự xin vé mới**, không để `EventSource` tự
+   kết nối lại. Vé chỉ dùng được một lần nên nó sẽ gọi lại đúng URL cũ với vé đã
+   tiêu huỷ và hỏng vĩnh viễn.
+
+## Khung chuyển khoản QR
+
+**File mới:** `components/PaymentQr.jsx`, gắn vào `pages/OrderDetail.jsx`.
+
+Hiện với đơn đang chờ thanh toán: ảnh QR (do `qr.sepay.vn` dựng, chỉ là URL ảnh
+nên không cần gọi API), số tài khoản, số tiền, nội dung chuyển khoản — kèm nút
+chép nhanh.
+
+**Không có nút "tôi đã chuyển tiền".** SePay phát hiện tiền vào rồi gọi webhook,
+backend đẩy sự kiện SSE xuống, trang tự tải lại và khung QR biến mất. Khách chỉ
+việc chuyển tiền rồi ngồi xem.
+
+Chưa khai báo tài khoản nhận tiền thì khung **tự ẩn**, web chạy bình thường với
+cách trả tiền tại quầy — xem `SEPAY_SETUP.md`.

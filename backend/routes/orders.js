@@ -6,6 +6,8 @@ const stockQ = require('../queries/adminStatsCypher');
 const { asyncHandler, HttpError, parsePagination, buildPagination } = require('../utils/http');
 const { verifyToken } = require('../middleware/auth');
 const { generateOrderCode } = require('../utils/orderCode');
+const { thongBaoDonThayDoi } = require('../services/eventBus');
+const { taoUrlQr, daCauHinh, cauHinh } = require('../services/sepay');
 
 const router = express.Router();
 
@@ -64,6 +66,14 @@ router.post(
     });
 
     if (rows.length === 0) throw new HttpError(500, 'Không tạo được đơn hàng');
+
+    // Báo ngay cho trang quản trị đang mở, khỏi phải tải lại trang mới thấy đơn mới
+    thongBaoDonThayDoi({
+      customerId,
+      orderId: rows[0].order_id,
+      status: rows[0].status,
+      hanhDong: 'tao',
+    });
 
     res.status(201).json({ data: rows[0] });
   })
@@ -144,7 +154,57 @@ router.post(
 
     if (rows.length === 0) throw new HttpError(500, 'Không tạo được đơn hàng');
 
+    thongBaoDonThayDoi({
+      customerId,
+      orderId: rows[0].order_id,
+      status: rows[0].status,
+      hanhDong: 'tao',
+    });
+
     res.status(201).json({ data: rows[0] });
+  })
+);
+
+/**
+ * GET /api/orders/:orderId/payment-qr
+ * Thông tin để khách chuyển khoản: ảnh QR, số tài khoản, nội dung, số tiền.
+ *
+ * Chỉ chủ đơn xem được, và chỉ khi đơn còn chờ thanh toán.
+ */
+router.get(
+  '/:orderId/payment-qr',
+  asyncHandler(async (req, res) => {
+    const orderId = String(req.params.orderId);
+
+    const [don] = await readQuery(q.ORDER_FIND_FOR_PAYMENT, { orderId });
+
+    if (!don) throw new HttpError(404, 'Không tìm thấy đơn hàng');
+    if (don.customer_id !== customerIdOf(req)) {
+      throw new HttpError(403, 'Đơn hàng này không phải của bạn');
+    }
+    if (don.status !== 'PENDING') {
+      throw new HttpError(400, `Đơn đang ở trạng thái ${don.status}, không cần thanh toán nữa`);
+    }
+
+    if (!daCauHinh()) {
+      // Chưa khai báo tài khoản nhận tiền thì báo rõ thay vì trả QR hỏng
+      return res.json({ data: { available: false, reason: 'Cửa hàng chưa bật thanh toán chuyển khoản' } });
+    }
+
+    const c = cauHinh();
+
+    return res.json({
+      data: {
+        available: true,
+        qrUrl: taoUrlQr({ orderId, amount: don.total }),
+        accountNumber: c.soTaiKhoan,
+        bank: c.nganHang,
+        amount: don.total,
+        // Nội dung chuyển khoản PHẢI đúng mã đơn — đây là thứ duy nhất dùng để
+        // đối chiếu tiền vào với đơn hàng.
+        transferContent: orderId,
+      },
+    });
   })
 );
 
@@ -206,6 +266,13 @@ router.post(
       throw new HttpError(400, 'Không xác nhận được thanh toán — đơn không tồn tại hoặc chưa dùng ZaloPay');
     }
 
+    thongBaoDonThayDoi({
+      customerId: customerIdOf(req),
+      orderId: rows[0].order_id,
+      status: rows[0].status,
+      hanhDong: 'thanh_toan',
+    });
+
     res.json({ data: rows[0] });
   })
 );
@@ -221,6 +288,15 @@ router.post(
     if (rows.length === 0) {
       throw new HttpError(400, 'Không huỷ được — đơn không tồn tại hoặc đã thanh toán');
     }
+
+    // Khách huỷ thì trang quản trị cũng phải thấy ngay, không thì nhân viên
+    // vẫn ngồi chờ một đơn đã bị bỏ.
+    thongBaoDonThayDoi({
+      customerId: customerIdOf(req),
+      orderId: rows[0].order_id,
+      status: rows[0].status,
+      hanhDong: 'huy',
+    });
 
     res.json({ data: rows[0] });
   })

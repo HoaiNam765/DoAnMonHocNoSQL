@@ -59,7 +59,8 @@ RETURN p.id            AS id,
        c.category_id   AS category_id,
        c.category_name AS category_name,
        count { (:Customer)-[:BOUGHT]->(p) }  AS bought_count,
-       count { (:Customer)-[:VIEWED]->(p) }  AS viewed_count
+       count { (:Customer)-[:VIEWED]->(p) }  AS viewed_count,
+       properties(p) AS all_props
 `;
 
 // ---------------------------------------------------------------------------
@@ -181,7 +182,8 @@ RETURN p.id            AS id,
        cat.category_id   AS category_id,
        cat.category_name AS category_name,
        count { (:Customer)-[:BOUGHT]->(p) }  AS bought_count,
-       count { (:Customer)-[:VIEWED]->(p) }  AS viewed_count
+       count { (:Customer)-[:VIEWED]->(p) }  AS viewed_count,
+       properties(p) AS all_props
 `;
 
 // ---------------------------------------------------------------------------
@@ -489,6 +491,40 @@ MERGE (p)-[:BELONGS_TO]->(cat)
 RETURN p.id AS id, p.title AS title, p.final_price AS final_price, p.rating AS rating, p.image AS image, cat.category_id AS category_id, cat.category_name AS category_name
 `;
 
+/**
+ * Thêm / sửa / xoá THUỘC TÍNH TUỲ Ý của sản phẩm.
+ *
+ * Đây là chỗ thể hiện rõ nhất tính SCHEMA-LESS của cơ sở dữ liệu NoSQL: tên
+ * thuộc tính do người quản trị đặt lúc chạy, không hề khai báo trước ở đâu.
+ * Hai sản phẩm cùng nhãn :Product hoàn toàn có thể mang hai bộ thuộc tính khác
+ * nhau — điều mà một bảng quan hệ không làm được nếu không ALTER TABLE hoặc
+ * dựng thêm bảng phụ kiểu EAV.
+ *
+ * VÌ SAO DÙNG `SET p += $attrs` CHỨ KHÔNG GHÉP TÊN THUỘC TÍNH VÀO CÂU LỆNH:
+ * Cypher không cho truyền TÊN thuộc tính qua tham số, nên cách hay bị nghĩ tới
+ * là nối chuỗi `SET p.` + tên. Làm vậy là mở đường cho chèn Cypher, vì tên
+ * thuộc tính do người dùng nhập. Dạng `+=` nhận nguyên một map làm THAM SỐ nên
+ * câu lệnh vẫn cố định, đồng thời cho phép tên thuộc tính có dấu tiếng Việt và
+ * khoảng trắng ("Mô tả", "Xuất xứ") mà không cần escape gì.
+ *
+ * Gán một khoá bằng null trong map chính là XOÁ thuộc tính đó — nhờ vậy thêm,
+ * sửa và xoá dùng chung đúng một câu lệnh.
+ */
+const ADMIN_SET_PRODUCT_ATTRIBUTES = `
+MATCH (p:Product {id: $productId})
+SET p += $attrs
+RETURN properties(p) AS props
+`;
+
+/** Toàn bộ thuộc tính của một sản phẩm — cho form sửa bên quản trị. */
+const ADMIN_GET_PRODUCT_DETAIL = `
+MATCH (p:Product {id: $productId})
+OPTIONAL MATCH (p)-[:BELONGS_TO]->(c:Category)
+RETURN properties(p)  AS props,
+       c.category_id   AS category_id,
+       c.category_name AS category_name
+`;
+
 /** Đổi trạng thái sản phẩm sang deleted. */
 const ADMIN_DELETE_PRODUCT = `
 MATCH (p:Product {id: $id})
@@ -619,6 +655,8 @@ module.exports = {
   ADMIN_CREATE_PRODUCT,
   ADMIN_UPDATE_PRODUCT,
   ADMIN_DELETE_PRODUCT,
+  ADMIN_SET_PRODUCT_ATTRIBUTES,
+  ADMIN_GET_PRODUCT_DETAIL,
   ADMIN_LIST_USERS,
   ADMIN_COUNT_USERS,
   ADMIN_GET_USER_DETAILS,

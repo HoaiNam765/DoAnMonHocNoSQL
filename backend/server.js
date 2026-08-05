@@ -10,6 +10,8 @@ const adminRoutes = require('./routes/admin');
 const cartRoutes = require('./routes/cart');
 const orderRoutes = require('./routes/orders');
 const chatRoutes = require('./routes/chat');
+const eventRoutes = require('./routes/events');
+const webhookRoutes = require('./routes/webhooks');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -48,6 +50,8 @@ app.get('/', (req, res) => {
       'POST   /api/admin/orders/:orderId/mark-paid',
       'ADMIN endpoints at /api/admin/*',
       'POST   /api/chat',
+      'POST   /api/events/ticket',
+      'GET    /api/events/stream?ticket=  (SSE — đẩy sự kiện đơn hàng thời gian thực)',
     ],
   });
 });
@@ -59,6 +63,10 @@ app.use('/api/cart', cartRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/events', eventRoutes);
+// Webhook do máy chủ SePay gọi vào — không dùng Firebase token, tự xác thực
+// bằng khoá riêng trong chính route đó.
+app.use('/api/webhooks', webhookRoutes);
 
 // 404 cho các đường dẫn không khớp route nào
 app.use((req, res) => {

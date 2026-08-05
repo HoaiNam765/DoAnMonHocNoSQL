@@ -5,6 +5,7 @@ import { useAuth } from "../../context/AuthContext";
 import ErrorMessage from "../../components/ErrorMessage";
 import OrderItemsModal from "../../components/admin/OrderItemsModal";
 import { useDebounce } from "../../hooks/useDebounce";
+import { useOrderEvents } from "../../hooks/useOrderEvents";
 import {
     adminGetOrders,
     adminMarkPaid,
@@ -70,6 +71,10 @@ function AdminOrders({ onOrderChanged }) {
     useEffect(() => {
         load();
     }, [load]);
+
+    // Khách đặt hoặc huỷ đơn ở máy khác thì danh sách này tự tải lại ngay,
+    // nhân viên không phải bấm F5 mới thấy đơn mới.
+    useOrderEvents({ user, onChange: load });
 
     const handleMarkPaid = async (order) => {
         const note = window.prompt(

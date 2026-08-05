@@ -428,3 +428,151 @@ số lượng khách mua ngay. Route cố tình bỏ qua trường `in_cart` mà
 **Không kẹp thầm lặng số lượng.** Bản đầu kẹp về khoảng 1–99 rồi mới kiểm kho,
 nên gửi 99999 vẫn tạo được đơn 99 món — tạo ra đơn khác với thứ khách yêu cầu.
 Nay số lượng ngoài khoảng trả 400 kèm thông báo rõ ràng.
+
+## 10. Thuộc tính tuỳ ý của sản phẩm (thể hiện tính schema-less)
+
+**File mới:** `utils/productAttributes.js`
+**Cypher mới:** `ADMIN_SET_PRODUCT_ATTRIBUTES`, `ADMIN_GET_PRODUCT_DETAIL`
+**Endpoint mới:** `GET`/`PUT /api/admin/products/:id/attributes`
+**Test:** `npm run test:attrs` (22 phép kiểm)
+
+### Vì sao cần
+
+Mô hình cũ đã thể hiện tốt mặt ĐỒ THỊ của NoSQL (duyệt nhiều bậc, thuộc tính
+trên cạnh), nhưng chưa thể hiện mặt SCHEMA-LESS: mọi Product đều đúng 6 thuộc
+tính cố định, không khác gì một bảng quan hệ.
+
+Nay admin tự đặt tên thuộc tính lúc chạy ("Mô tả", "Xuất xứ", "Bảo hành"...).
+Hai node cùng nhãn `:Product` có thể mang hai bộ thuộc tính hoàn toàn khác nhau
+— quan hệ muốn làm được phải `ALTER TABLE` hoặc dựng bảng phụ kiểu EAV.
+
+### Kỹ thuật: vì sao dùng `SET p += $attrs`
+
+Cypher không cho truyền TÊN thuộc tính qua tham số. Cách hay bị nghĩ tới là nối
+chuỗi `'SET p.' + tên` — nhưng tên đó do người dùng nhập, nối thẳng là mở đường
+cho chèn Cypher.
+
+Dạng `SET p += $map` nhận nguyên một map làm tham số nên câu lệnh vẫn cố định.
+Thêm hai cái lợi: tên thuộc tính có dấu tiếng Việt và khoảng trắng vẫn dùng được
+mà không phải escape, và **gán một khoá bằng null chính là xoá thuộc tính** —
+nhờ vậy thêm, sửa, xoá dùng chung đúng một câu lệnh.
+
+### Bảo vệ thuộc tính lõi
+
+`id`, `title`, `final_price`, `rating`, `image`, `stock`, `status` bị chặn không
+cho ghi qua đường này. Chúng có ô nhập riêng và có ràng buộc kiểu dữ liệu; để
+admin gõ nhầm tên "final_price" rồi nhập chữ là giá thành chuỗi, kéo theo mọi
+phép tính tiền và bộ lọc giá hỏng theo. Đổi `id` còn nặng hơn — mất dấu toàn bộ
+quan hệ đang trỏ tới sản phẩm.
+
+Giới hạn: tối đa 30 thuộc tính/sản phẩm, tên ≤ 50 ký tự, giá trị ≤ 2000 ký tự.
+
+### Kiểu dữ liệu
+
+Ô nhập trên web luôn trả chuỗi, nhưng lưu tất cả thành chuỗi thì mất một điểm
+đáng khoe của NoSQL: mỗi thuộc tính giữ kiểu riêng. Nên "250" lưu thành số 250,
+"true" thành boolean, còn lại giữ chữ. Cố ý KHÔNG đổi chuỗi số bắt đầu bằng 0
+("0901234567") sang số — đó thường là số điện thoại hay mã hàng, đổi sang số là
+mất số 0 đứng đầu.
+
+## 11. Cập nhật đơn hàng thời gian thực (SSE)
+
+**File mới:** `services/eventBus.js`, `routes/events.js`
+**Endpoint mới:** `POST /api/events/ticket`, `GET /api/events/stream?ticket=`
+**Test:** `npm run test:events` (20 phép kiểm)
+
+### Vì sao chọn SSE
+
+| Cách | Nhược điểm |
+|---|---|
+| Hỏi lặp (polling) | Luôn trễ vài giây, và cứ vài giây một lượt truy vấn Neo4j cho MỖI người đang mở trang — phần lớn thời gian chẳng có gì đổi |
+| WebSocket | Mạnh nhưng hai chiều, phải thêm thư viện và tự lo kết nối lại |
+| **SSE** | **Đúng nhu cầu: dữ liệu chỉ đi MỘT CHIỀU (máy chủ → trình duyệt). Chạy trên HTTP thường, trình duyệt có sẵn EventSource và tự kết nối lại** |
+
+Không thêm thư viện nào.
+
+### Cơ chế "vé" — vì sao không nhét token vào URL
+
+`EventSource` của trình duyệt **không cho đặt header**, nên không gửi kèm được
+`Authorization: Bearer`. Cách hay gặp là nhét token vào query string, nhưng khi
+đó token nằm lại trong log truy cập của máy chủ và trong lịch sử trình duyệt.
+
+Thay vào đó: gọi `POST /api/events/ticket` (có xác thực) để xin một vé ngẫu
+nhiên **dùng một lần, sống 60 giây**, rồi mới mở luồng bằng vé đó. Vé lộ ra
+ngoài cũng gần như vô hại vì hết hạn ngay và đã bị tiêu huỷ khi dùng.
+
+### Dữ liệu gửi đi cố ý rất ít
+
+Sự kiện chỉ gồm `{ orderId, status, hanhDong, luc }` — không có tên, số điện
+thoại hay địa chỉ. Trình duyệt nhận tín hiệu rồi tự gọi lại API có xác thực để
+lấy dữ liệu đầy đủ. Nhờ vậy luồng sự kiện không mang thông tin cá nhân nào.
+
+Hai kênh tách biệt:
+- `orders_changed` → gửi cho **mọi admin** đang mở trang
+- `my_orders_changed` → chỉ gửi cho **đúng chủ đơn**
+
+Khách không bao giờ nhận được sự kiện đơn của người khác (có phép kiểm riêng).
+
+### Sáu chỗ phát sự kiện
+
+`POST /api/orders`, `POST /api/orders/buy-now`, `POST /api/orders/:id/confirm-paid`,
+`POST /api/orders/:id/cancel`, `POST /api/admin/orders/:id/mark-paid`,
+`PUT /api/admin/orders/:id/status`.
+
+`ORDER_UPDATE_STATUS` được bổ sung trả về `customer_id` — không có nó thì không
+biết phải báo cho khách nào khi admin đổi trạng thái đơn.
+
+### Giữ kết nối
+
+Cứ 25 giây gửi một dòng chú thích rỗng. Không có nhịp này, proxy hoặc chính
+trình duyệt có thể cắt kết nối vì tưởng đã chết.
+
+## 12. Thanh toán chuyển khoản tự động qua SePay
+
+**File mới:** `services/sepay.js`, `routes/webhooks.js`, `scripts/setup-payment.js`
+**Cypher mới:** `PAYMENT_TX_RECORD`, `PAYMENT_TX_LINK_ORDER`, `ORDER_FIND_FOR_PAYMENT`
+**Endpoint mới:** `POST /api/webhooks/sepay`, `GET /api/orders/:id/payment-qr`
+**Test:** `npm run test:sepay` (27 phép kiểm, chạy được không cần tài khoản SePay)
+**Hướng dẫn cấu hình:** xem `SEPAY_SETUP.md`
+
+SePay không giữ tiền và không xử lý thẻ — nó theo dõi biến động số dư tài khoản
+ngân hàng rồi gọi webhook khi có tiền vào. Nhờ vậy không đụng dữ liệu thẻ, không
+thuộc phạm vi PCI-DSS.
+
+### Bốn điều bắt buộc đúng ở webhook
+
+Đây là endpoint duy nhất trong hệ thống KHÔNG dùng Firebase token (người gọi là
+máy chủ SePay, không phải người dùng), nên phải tự lo an toàn:
+
+1. **Xác thực khoá** — không thì ai biết địa chỉ này cũng tự "báo" đã trả tiền.
+   So sánh bằng `crypto.timingSafeEqual` để không lộ khoá qua chênh lệch thời gian.
+2. **Chống xử lý trùng** — SePay gửi lại tới 7 lần trong 5 tiếng. Chặn bằng
+   `MERGE` theo mã giao dịch + ràng buộc UNIQUE (`npm run setup:payment`).
+   Không có ràng buộc thì hai webhook về cùng lúc vẫn tạo được hai node.
+3. **Chỉ tin số tiền THẬT** trong `transferAmount`, không tin con số nào lấy từ
+   nội dung chuyển khoản — nội dung đó khách gõ được.
+4. **Chỉ nhận `transferType = 'in'`**, bỏ qua tiền ra.
+
+### Luôn trả 200
+
+Kể cả khi không khớp đơn nào. Trả lỗi chỉ khiến SePay gửi lại 7 lần vô ích cho
+một giao dịch vốn không xử lý được.
+
+### Bóc mã đơn
+
+Ngân hàng hay chèn thêm chữ vào nội dung ("CT DEN:520123 DH1A2B3C4D GD BANG QR"),
+nên dò theo mẫu `DH` + 8 ký tự chứ không so cả chuỗi. Ưu tiên trường `code` do
+SePay tự tách, không có thì dò trong `content`. Chấp nhận cả chữ thường.
+
+Định dạng mã đơn sẵn có (`DHxxxxxxxx`, sinh bằng `crypto.randomInt`) trùng khớp
+đúng khuyến nghị của SePay: mã ngẫu nhiên, không đoán được, không tuần tự.
+
+### Chuyển thiếu tiền
+
+KHÔNG tự đánh dấu đã thanh toán — ghi log để nhân viên xử lý tay, vì có thể
+khách chuyển làm nhiều lần hoặc chuyển nhầm.
+
+### Nối vào phần thời gian thực
+
+Sau khi đánh dấu PAID, webhook gọi `thongBaoDonThayDoi` — khách đang mở trang đơn
+thấy đổi sang "Đã thanh toán" ngay khi tiền vào, không cần tải lại trang.

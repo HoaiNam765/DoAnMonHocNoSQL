@@ -10,6 +10,8 @@ const statsQ = require('../queries/adminStatsCypher');
 const { asyncHandler, HttpError, parsePagination, buildPagination } = require('../utils/http');
 const { requireAdmin } = require('../middleware/adminAuth');
 const { parseFilters } = require('../utils/filters');
+const { extractCustomAttributes, parseAttributes } = require('../utils/productAttributes');
+const { thongBaoDonThayDoi } = require('../services/eventBus');
 
 const router = express.Router();
 
@@ -226,6 +228,62 @@ router.put(
   })
 );
 
+/**
+ * GET /api/admin/products/:id/attributes
+ * Đọc các thuộc tính TUỲ Ý hiện có của sản phẩm, cho form sửa.
+ */
+router.get(
+  '/products/:id/attributes',
+  asyncHandler(async (req, res) => {
+    const rows = await readQuery(q.ADMIN_GET_PRODUCT_DETAIL, { productId: String(req.params.id) });
+
+    if (rows.length === 0) throw new HttpError(404, 'Không tìm thấy sản phẩm');
+
+    res.json({
+      status: 'success',
+      data: { attributes: extractCustomAttributes(rows[0].props) },
+    });
+  })
+);
+
+/**
+ * PUT /api/admin/products/:id/attributes
+ * Body: { attributes: { "Mô tả": "...", "Xuất xứ": "Việt Nam", "Bảo hành": null } }
+ *
+ * Thêm / sửa / xoá thuộc tính tuỳ ý. Giá trị null (hoặc chuỗi rỗng) nghĩa là xoá.
+ *
+ * Đây là nơi thể hiện tính schema-less: tên thuộc tính do admin đặt lúc chạy,
+ * không khai báo trước ở bất kỳ đâu. Các thuộc tính lõi (id, giá, tồn kho...)
+ * bị chặn ở utils/productAttributes.js vì chúng có ô nhập riêng và có ràng buộc
+ * kiểu dữ liệu — để ghi đè qua đây là hỏng dữ liệu ngay.
+ */
+router.put(
+  '/products/:id/attributes',
+  asyncHandler(async (req, res) => {
+    const productId = String(req.params.id);
+    const attrs = parseAttributes(req.body?.attributes ?? {});
+
+    if (Object.keys(attrs).length === 0) {
+      // Không có gì để đổi thì trả về nguyên trạng, khỏi ghi vô ích
+      const rows = await readQuery(q.ADMIN_GET_PRODUCT_DETAIL, { productId });
+      if (rows.length === 0) throw new HttpError(404, 'Không tìm thấy sản phẩm');
+      return res.json({
+        status: 'success',
+        data: { attributes: extractCustomAttributes(rows[0].props) },
+      });
+    }
+
+    const rows = await writeQuery(q.ADMIN_SET_PRODUCT_ATTRIBUTES, { productId, attrs });
+
+    if (rows.length === 0) throw new HttpError(404, 'Không tìm thấy sản phẩm');
+
+    return res.json({
+      status: 'success',
+      data: { attributes: extractCustomAttributes(rows[0].props) },
+    });
+  })
+);
+
 router.delete(
   '/products/:id',
   asyncHandler(async (req, res) => {
@@ -410,6 +468,14 @@ router.post(
     // web nhưng có thể không tới lấy, giữ hàng sớm sẽ khoá nhầm tồn kho.
     const stockRows = await writeQuery(statsQ.DECREASE_STOCK_FOR_ORDER, { orderId });
 
+    // Khách đang mở trang đơn hàng sẽ thấy đổi sang "Đã thanh toán" ngay lập tức
+    thongBaoDonThayDoi({
+      customerId: rows[0].customer_id,
+      orderId,
+      status: rows[0].status,
+      hanhDong: 'thanh_toan',
+    });
+
     res.json({ status: 'success', data: { ...rows[0], stock_updated: stockRows } });
   })
 );
@@ -441,6 +507,13 @@ router.put(
     if (status === 'CANCELLED' && ['PAID', 'COMPLETED'].includes(before.status)) {
       await writeQuery(statsQ.RESTORE_STOCK_FOR_ORDER, { orderId });
     }
+
+    thongBaoDonThayDoi({
+      customerId: rows[0].customer_id,
+      orderId,
+      status: rows[0].status,
+      hanhDong: 'doi_trang_thai',
+    });
 
     res.json({ status: 'success', data: rows[0] });
   })

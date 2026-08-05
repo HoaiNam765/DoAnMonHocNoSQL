@@ -21,21 +21,21 @@ const { driver, closeDriver, int } = require('../db');
 // Giữ nguyên ở đây để chạy độc lập, không cần import module queries.
 
 const QUERY_A = `
-MATCH (c1:Customer {customer_id: $customerId})-[:BOUGHT]->(p1:Product)
-      <-[:BOUGHT]-(c2:Customer)-[:BOUGHT]->(p2:Product)
-WHERE c1 <> c2
-  AND NOT (c1)-[:BOUGHT]->(p2)
-WITH p2, count(DISTINCT c2) AS score
-OPTIONAL MATCH (p2)-[:BELONGS_TO]->(cat:Category)
-RETURN p2.id            AS id,
-       p2.title         AS title,
-       p2.final_price   AS final_price,
-       p2.rating        AS rating,
-       p2.image         AS image,
-       cat.category_name AS category_name,
-       score
-ORDER BY score DESC, coalesce(p2.rating, 0) DESC, p2.id ASC
-LIMIT $limit
+    MATCH (c1:Customer {customer_id: $customerId})-[:BOUGHT]->(p1:Product)
+          <-[:BOUGHT]-(c2:Customer)-[:BOUGHT]->(p2:Product)
+    WHERE c1 <> c2
+      AND NOT (c1)-[:BOUGHT]->(p2)
+    WITH p2, count(DISTINCT c2) AS score
+    OPTIONAL MATCH (p2)-[:BELONGS_TO]->(cat:Category)
+    RETURN p2.id            AS id,
+           p2.title         AS title,
+           p2.final_price   AS final_price,
+           p2.rating        AS rating,
+           p2.image         AS image,
+           cat.category_name AS category_name,
+           score
+    ORDER BY score DESC, coalesce(p2.rating, 0) DESC, p2.id ASC
+    LIMIT $limit
 `;
 
 const QUERY_B = `

@@ -11,6 +11,8 @@ import {
     formatDate,
     statusInfo,
 } from "../services/shopService";
+import { useOrderEvents } from "../hooks/useOrderEvents";
+import PaymentQr from "../components/PaymentQr";
 
 /**
  * Chi tiết đơn hàng.
@@ -48,6 +50,16 @@ function OrderDetail() {
     useEffect(() => {
         load();
     }, [load]);
+
+    // Nhân viên bấm "Đã thanh toán" là trang này đổi trạng thái ngay lập tức.
+    // Chỉ tải lại khi sự kiện nói về ĐÚNG đơn đang xem, tránh gọi API thừa khi
+    // khách có nhiều đơn khác cùng thay đổi.
+    useOrderEvents({
+        user,
+        onChange: (sk) => {
+            if (!sk?.orderId || sk.orderId === orderId) load();
+        },
+    });
 
     const handleCancel = async () => {
         if (!window.confirm("Bạn chắc chắn muốn huỷ đơn này?")) return;
@@ -121,6 +133,9 @@ function OrderDetail() {
                     </div>
                 </div>
             )}
+
+            {/* Chuyển khoản qua QR — tự ẩn nếu cửa hàng chưa bật */}
+            {isPending && <PaymentQr user={user} orderId={order.order_id} />}
 
             {/* Danh sách sản phẩm */}
             <h3 style={{ marginTop: "30px" }}>Sản phẩm</h3>

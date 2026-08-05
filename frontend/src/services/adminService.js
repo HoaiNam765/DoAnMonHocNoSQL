@@ -92,6 +92,22 @@ export async function deleteProduct(token, id) {
     });
 }
 
+/** Đọc các thuộc tính tuỳ ý (do admin tự đặt) của một sản phẩm. */
+export async function getProductAttributes(token, id) {
+    return request(`/products/${id}/attributes`, token);
+}
+
+/**
+ * Lưu thuộc tính tuỳ ý. Giá trị null nghĩa là xoá thuộc tính đó.
+ * @param {object} attributes { "Mô tả": "...", "Bảo hành": null }
+ */
+export async function saveProductAttributes(token, id, attributes) {
+    return request(`/products/${id}/attributes`, token, {
+        method: "PUT",
+        body: JSON.stringify({ attributes }),
+    });
+}
+
 // 4. Người dùng
 export async function getAdminUsers(token, { page = 1, limit = 10, search = "" } = {}) {
     const query = new URLSearchParams({ page, limit, search }).toString();

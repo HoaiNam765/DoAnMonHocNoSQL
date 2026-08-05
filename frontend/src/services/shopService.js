@@ -79,6 +79,10 @@ export const createOrderBuyNow = (token, { productId, quantity, ...info }) =>
         body: JSON.stringify({ productId, quantity, ...info }),
     });
 
+/** Thông tin chuyển khoản (ảnh QR, số tài khoản, nội dung) cho đơn đang chờ trả tiền. */
+export const getPaymentQr = (token, orderId) =>
+    authFetch(`/orders/${orderId}/payment-qr`, token);
+
 export const confirmOrderPaid = (token, orderId) =>
     authFetch(`/orders/${orderId}/confirm-paid`, token, { method: "POST" });
 

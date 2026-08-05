@@ -161,6 +161,52 @@ CREATE (o)-[:CONTAINS {quantity: qty, unit_price: unitPrice}]->(p)
 RETURN o.order_id AS order_id, o.total AS total, o.status AS status
 `;
 
+// ---------------------------------------------------------------------------
+// Thanh toán chuyển khoản qua SePay
+// ---------------------------------------------------------------------------
+
+/**
+ * Ghi nhận một giao dịch chuyển khoản, CHỐNG XỬ LÝ TRÙNG.
+ *
+ * VÌ SAO BẮT BUỘC PHẢI CÓ: SePay gửi lại webhook tới 7 lần trong 5 tiếng nếu
+ * chưa nhận được phản hồi 200. Không chặn trùng thì một lần chuyển tiền có thể
+ * bị xử lý nhiều lần — đơn được "thanh toán" lặp, kho bị trừ nhiều lần.
+ *
+ * MERGE theo tx_id (mã giao dịch do SePay cấp) là chốt chặn: lần đầu tạo mới và
+ * trả la_moi = true, những lần sau chỉ khớp lại node cũ và trả false.
+ *
+ * LƯU Ý: phải có ràng buộc UNIQUE trên tx_id thì MERGE mới thật sự an toàn khi
+ * hai webhook về cùng lúc — chạy `npm run setup:payment` để tạo ràng buộc đó.
+ */
+const PAYMENT_TX_RECORD = `
+MERGE (t:PaymentTx {tx_id: $txId})
+ON CREATE SET t.la_moi     = true,
+              t.amount     = $amount,
+              t.gateway    = $gateway,
+              t.content    = $content,
+              t.order_code = $orderCode,
+              t.created_at = datetime()
+ON MATCH  SET t.la_moi = false
+RETURN t.la_moi AS la_moi, t.tx_id AS tx_id
+`;
+
+/** Nối giao dịch với đơn hàng để sau này tra soát được tiền vào từ đâu. */
+const PAYMENT_TX_LINK_ORDER = `
+MATCH (t:PaymentTx {tx_id: $txId})
+MATCH (o:Order {order_id: $orderId})
+MERGE (o)-[:PAID_BY]->(t)
+RETURN t.tx_id AS tx_id, o.order_id AS order_id
+`;
+
+/** Đơn hàng kèm chủ đơn — dùng khi đối chiếu tiền chuyển khoản với đơn. */
+const ORDER_FIND_FOR_PAYMENT = `
+MATCH (c:Customer)-[:PLACED]->(o:Order {order_id: $orderId})
+RETURN o.order_id AS order_id,
+       o.status   AS status,
+       o.total    AS total,
+       c.customer_id AS customer_id
+`;
+
 /** Danh sách đơn của 1 khách (trang "Đơn hàng của tôi"). */
 const ORDER_LIST_BY_CUSTOMER = `
 MATCH (c:Customer {customer_id: $customerId})-[:PLACED]->(o:Order)
@@ -266,7 +312,9 @@ RETURN o.order_id AS order_id,
 const ORDER_UPDATE_STATUS = `
 MATCH (o:Order {order_id: $orderId})
 SET o.status = $status
-RETURN o.order_id AS order_id, o.status AS status
+WITH o
+OPTIONAL MATCH (c:Customer)-[:PLACED]->(o)
+RETURN o.order_id AS order_id, o.status AS status, c.customer_id AS customer_id
 `;
 
 /** Huỷ đơn — chỉ cho phép khi chưa thanh toán. */
@@ -383,6 +431,9 @@ module.exports = {
   // Đơn hàng
   ORDER_CREATE_FROM_CART,
   ORDER_CREATE_DIRECT,
+  PAYMENT_TX_RECORD,
+  PAYMENT_TX_LINK_ORDER,
+  ORDER_FIND_FOR_PAYMENT,
   ORDER_LIST_BY_CUSTOMER,
   ORDER_COUNT_BY_CUSTOMER,
   ORDER_GET_DETAIL,
