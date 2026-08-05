@@ -26,9 +26,13 @@ dist-ssr
 # Firebase service account key — KHÔNG commit lên git
 firebase-service-account.json
 backend/firebase-service-account.json
-# Environment variables — KHÔNG commit lên git
+# Cấu hình môi trường — KHÔNG commit lên git.
+# Cả backend lẫn frontend nay dùng chung một file .env ở thư mục gốc.
 .env
 *.env
-backend/.env
+.env.local
+.env.*.local
 
-backend/.env.example
+# Nhưng file MẪU thì PHẢI commit để người trong nhóm biết cần điền những gì.
+# Nó không chứa giá trị thật, chỉ có tên biến và ghi chú.
+!.env.example

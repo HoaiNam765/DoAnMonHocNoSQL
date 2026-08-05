@@ -1,5 +1,5 @@
 const neo4j = require('neo4j-driver');
-require('dotenv').config();
+require('./loadEnv');
 
 const { NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD, NEO4J_DATABASE } = process.env;
 

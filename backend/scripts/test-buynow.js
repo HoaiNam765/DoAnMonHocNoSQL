@@ -7,7 +7,7 @@
  * Yêu cầu: server đang chạy.
  * Chạy: npm run test:buynow
  */
-require('dotenv').config();
+require('../loadEnv');
 const admin = require('../firebase');
 const { driver, closeDriver } = require('../db');
 

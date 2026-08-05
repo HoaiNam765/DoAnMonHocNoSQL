@@ -7,7 +7,7 @@
  * Yêu cầu: server đang chạy, có SEPAY_WEBHOOK_APIKEY trong .env.
  * Chạy: npm run test:sepay
  */
-require('dotenv').config();
+require('../loadEnv');
 const admin = require('../firebase');
 const { driver, closeDriver } = require('../db');
 

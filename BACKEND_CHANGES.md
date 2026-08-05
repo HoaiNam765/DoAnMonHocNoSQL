@@ -260,7 +260,7 @@ Các query đều dùng tham số Cypher, không ghép trực tiếp dữ liệu
 
 **File cập nhật:**
 - `backend/server.js` — mount `/api/chat`.
-- `backend/.env` / `.env.example` — thêm `GEMINI_API_KEY`, `GEMINI_MODEL`.
+- `.env` (thư mục gốc) — thêm `GEMINI_API_KEY`, `GEMINI_MODEL`.
 
 ### Vì sao an toàn
 
@@ -576,3 +576,56 @@ khách chuyển làm nhiều lần hoặc chuyển nhầm.
 
 Sau khi đánh dấu PAID, webhook gọi `thongBaoDonThayDoi` — khách đang mở trang đơn
 thấy đổi sang "Đã thanh toán" ngay khi tiền vào, không cần tải lại trang.
+
+## 13. Gộp cấu hình về một file .env duy nhất
+
+**Trước:** `backend/.env` (17 khoá) + `frontend/.env` (6 khoá) + hai file mẫu riêng.
+**Sau:** một `.env` và một `.env.example` ở **thư mục gốc dự án**.
+
+**File mới:** `backend/loadEnv.js`
+
+### Vì sao cần loadEnv.js
+
+`require('dotenv').config()` mặc định chỉ tìm `.env` ở **thư mục đang chạy lệnh**.
+Chạy `npm start` trong backend thì nó tìm `backend/.env`, nhưng chạy script từ
+chỗ khác lại tìm nhầm chỗ — đã gặp thật: script chạy từ thư mục tạm báo
+"injected env (0)" rồi không kết nối được Neo4j.
+
+`loadEnv.js` trỏ thẳng tới file gốc bằng đường dẫn tuyệt đối tính từ vị trí file
+đó, nên gọi từ đâu cũng ra đúng một file. Cả 7 chỗ nạp env đã đổi sang
+`require('./loadEnv')` / `require('../loadEnv')`.
+
+Phía Vite: đặt `envDir: '..'` trong `vite.config.js`.
+
+### Tại sao gộp chung vẫn an toàn
+
+Vite đọc cả file nhưng **chỉ đưa ra trình duyệt những biến có tiền tố `VITE_`**.
+Đã kiểm chứng bằng cách build production rồi dò trong file JS:
+
+| Biến | Trong bundle công khai? |
+|---|---|
+| `NEO4J_PASSWORD`, `NEO4J_URI`, `NEO4J_USERNAME` | không |
+| `GEMINI_API_KEY` | không |
+| `SEPAY_WEBHOOK_APIKEY`, `SEPAY_ACCOUNT_NUMBER` | không |
+| `VITE_FIREBASE_*` | có — đúng như thiết kế |
+
+> `FIREBASE_WEB_API_KEY` có giá trị **trùng** với `VITE_FIREBASE_API_KEY` (cùng
+> là Firebase Web API Key). Chuỗi này nằm trong bundle từ trước khi gộp và vốn
+> được thiết kế để công khai — bảo vệ bằng Security Rules và authorized domains,
+> không phải bằng cách giấu key.
+
+### ĐÁNH ĐỔI PHẢI NHỚ
+
+Chung một file nghĩa là **chỉ cần đặt nhầm tiền tố `VITE_` cho một bí mật là nó
+bị ghi thẳng vào file JS ai cũng tải về đọc được**. Trước đây hai file tách nhau
+nên lỡ tay cũng khó lộ. Đã ghi cảnh báo này ngay đầu `.env.example` và trong
+`vite.config.js`.
+
+### Dọn cấu hình chết
+
+Bốn khoá trong file mẫu cũ không còn file nào dùng (sót lại từ cách chuyển khoản
+trước khi có SePay) nên đã bỏ khỏi file mẫu mới: `BANK_ID`, `BANK_ACCOUNT_NO`,
+`BANK_ACCOUNT_NAME`, `PAYMENT_WEBHOOK_SECRET`.
+
+Cũng sửa `.gitignore`: thêm `!.env.example` để file mẫu **được commit** cho
+người trong nhóm — trước đó `backend/.env.example` bị chặn nhầm.

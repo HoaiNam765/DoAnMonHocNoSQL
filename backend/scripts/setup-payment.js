@@ -8,7 +8,7 @@
  *
  * Chạy: npm run setup:payment
  */
-require('dotenv').config();
+require('../loadEnv');
 const { driver, closeDriver } = require('../db');
 
 (async () => {

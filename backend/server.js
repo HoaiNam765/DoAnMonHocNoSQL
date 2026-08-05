@@ -1,6 +1,6 @@
 const express = require('express');
 const cors = require('cors');
-require('dotenv').config();
+require('./loadEnv');
 
 const { verifyConnection, closeDriver } = require('./db');
 const productRoutes = require('./routes/products');

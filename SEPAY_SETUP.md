@@ -77,7 +77,7 @@ tiền tại quầy như cũ. Không có gì hỏng.
 Đăng ký tại https://my.sepay.vn — bật **Test mode** rồi tạo tài khoản ngân hàng
 giả lập. Nếu dùng thật thì kết nối tài khoản ngân hàng của bạn.
 
-### 2. Điền vào `backend/.env`
+### 2. Điền vào `.env` ở thư mục gốc dự án
 
 ```env
 SEPAY_ACCOUNT_NUMBER=<số tài khoản nhận tiền>
