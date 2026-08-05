@@ -9,6 +9,7 @@ const shopQ = require('../queries/shopCypher');
 const statsQ = require('../queries/adminStatsCypher');
 const { asyncHandler, HttpError, parsePagination, buildPagination } = require('../utils/http');
 const { requireAdmin } = require('../middleware/adminAuth');
+const { parseFilters } = require('../utils/filters');
 
 const router = express.Router();
 
@@ -145,12 +146,23 @@ router.get(
   asyncHandler(async (req, res) => {
     const { page, limit, skip } = parsePagination(req.query);
     const search = req.query.search ? req.query.search.trim().toLowerCase() : '';
-    const categoryId = req.query.categoryId ? String(req.query.categoryId).trim() : null;
 
-    const countRows = await readQuery(q.COUNT_PRODUCTS, { search, categoryId });
+    // Dùng chung bộ đọc tham số lọc với trang khách hàng. Bỏ trống thì trả về
+    // null / chuỗi rỗng, tức là không lọc và giữ thứ tự mặc định — hành vi cũ
+    // của trang quản trị không đổi.
+    const { categoryId, minPrice, maxPrice, sort } = parseFilters(req.query);
+
+    const loc = { search, categoryId, minPrice, maxPrice };
+
+    const countRows = await readQuery(q.COUNT_PRODUCTS, loc);
     const total = countRows[0] ? countRows[0].total : 0;
 
-    const products = await readQuery(q.LIST_PRODUCTS, { search, categoryId, skip: int(skip), limit: int(limit) });
+    const products = await readQuery(q.LIST_PRODUCTS, {
+      ...loc,
+      sort,
+      skip: int(skip),
+      limit: int(limit),
+    });
 
     res.json({
       status: 'success',
