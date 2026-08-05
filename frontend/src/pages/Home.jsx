@@ -3,8 +3,12 @@ import { useEffect, useState } from "react";
 import ProductList from "../components/ProductList";
 import RecommendationSection from "../components/RecommendationSection";
 import ErrorMessage from "../components/ErrorMessage";
+import ProductFilters from "../components/ProductFilters";
+import PurchaseTicker from "../components/PurchaseTicker";
 
 import { getProducts } from "../services/productService";
+
+const KHONG_LOC = { categoryId: "", minPrice: "", maxPrice: "", sort: "" };
 
 function Home() {
     const [products, setProducts] = useState([]);
@@ -12,6 +16,7 @@ function Home() {
 
     const [page, setPage] = useState(1);
     const [search, setSearch] = useState("");
+    const [filters, setFilters] = useState(KHONG_LOC);
 
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -23,7 +28,7 @@ function Home() {
                 setLoading(true);
                 setError(null);
 
-                const result = await getProducts(page, 12, search);
+                const result = await getProducts(page, 12, search, filters);
                 setProducts(result.data || []);
                 setPagination(result.pagination);
             } catch (err) {
@@ -37,10 +42,19 @@ function Home() {
         }
 
         loadProducts();
-    }, [page, search, retryCount]);
+        // filters là object mới mỗi lần lọc nên so sánh theo nội dung, tránh gọi lại thừa
+    }, [page, search, retryCount, filters.categoryId, filters.minPrice, filters.maxPrice, filters.sort]);
+
+    /** Đổi bộ lọc thì quay về trang 1 — không thì dễ rơi vào trang trống. */
+    const doiBoLoc = (moi) => {
+        setPage(1);
+        setFilters(moi);
+    };
 
     return (
         <div className="app-shell">
+            <PurchaseTicker />
+
             <RecommendationSection />
 
             <div className="section-heading">
@@ -60,6 +74,8 @@ function Home() {
                     }}
                 />
             </div>
+
+            <ProductFilters value={filters} onChange={doiBoLoc} />
 
             {loading ? (
                 <div className="empty-state">Đang tải...</div>

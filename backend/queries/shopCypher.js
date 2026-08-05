@@ -128,6 +128,39 @@ DELETE cart
 RETURN o.order_id AS order_id, o.total AS total, o.status AS status
 `;
 
+/**
+ * Đặt hàng THẲNG cho một sản phẩm — phục vụ nút "Mua ngay".
+ *
+ * Khác ORDER_CREATE_FROM_CART ở chỗ KHÔNG đọc và KHÔNG xoá quan hệ IN_CART.
+ * Nhờ vậy "mua ngay" hoàn toàn tách khỏi giỏ hàng:
+ *   - Khách bỏ ngang giữa chừng thì không có gì đọng lại trong giỏ.
+ *   - Đơn tạo ra chỉ chứa đúng sản phẩm vừa bấm, không lẫn hàng đang có sẵn trong giỏ.
+ *
+ * Đơn giá vẫn được chốt tại thời điểm đặt hàng (đọc p.final_price ngay trong
+ * câu lệnh tạo đơn), giống hệt luồng giỏ hàng — xem mục 4.4 của báo cáo.
+ */
+const ORDER_CREATE_DIRECT = `
+MATCH (c:Customer {customer_id: $customerId})
+MATCH (p:Product {id: $productId})
+WITH c, p, p.final_price AS unitPrice, $quantity AS qty
+
+CREATE (o:Order {
+  order_id       : $orderId,
+  status         : $status,
+  total          : unitPrice * qty,
+  payment_method : $paymentMethod,
+  receiver_name  : $receiverName,
+  phone          : $phone,
+  address        : $address,
+  note           : $note,
+  created_at     : datetime()
+})
+CREATE (c)-[:PLACED]->(o)
+CREATE (o)-[:CONTAINS {quantity: qty, unit_price: unitPrice}]->(p)
+
+RETURN o.order_id AS order_id, o.total AS total, o.status AS status
+`;
+
 /** Danh sách đơn của 1 khách (trang "Đơn hàng của tôi"). */
 const ORDER_LIST_BY_CUSTOMER = `
 MATCH (c:Customer {customer_id: $customerId})-[:PLACED]->(o:Order)
@@ -349,6 +382,7 @@ module.exports = {
   CART_COUNT,
   // Đơn hàng
   ORDER_CREATE_FROM_CART,
+  ORDER_CREATE_DIRECT,
   ORDER_LIST_BY_CUSTOMER,
   ORDER_COUNT_BY_CUSTOMER,
   ORDER_GET_DETAIL,

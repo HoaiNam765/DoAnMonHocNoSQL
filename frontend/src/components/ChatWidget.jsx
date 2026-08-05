@@ -345,8 +345,10 @@ const styles = {
         borderRadius: "6px",
         cursor: "pointer",
     },
-    addBtnDisabled: { borderColor: "#c4ccd8", color: "#9aa5b4", cursor: "not-allowed" },
-    addBtnAdded: { background: "#e8f5e9", borderColor: "#43a047", color: "#2e7d32" },
+    // Dùng nguyên `border` thay vì chỉ `borderColor` — trộn dạng viết tắt với
+    // dạng tách lẻ cho cùng thuộc tính khiến React cảnh báo và dễ hiển thị sai.
+    addBtnDisabled: { border: "1px solid #c4ccd8", color: "#9aa5b4", cursor: "not-allowed" },
+    addBtnAdded: { background: "#e8f5e9", border: "1px solid #43a047", color: "#2e7d32" },
     suggestions: { display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "4px" },
     suggestionBtn: {
         background: "white",

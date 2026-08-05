@@ -12,14 +12,18 @@ const COUNT_PRODUCTS = `
 MATCH (p:Product)
 WHERE ($search = '' OR toLower(p.title) CONTAINS $search)
   AND ($categoryId IS NULL OR EXISTS { (p)-[:BELONGS_TO]->(:Category {category_id: $categoryId}) })
+  AND ($minPrice IS NULL OR p.final_price >= $minPrice)
+  AND ($maxPrice IS NULL OR p.final_price <= $maxPrice)
 RETURN count(p) AS total
 `;
 
-/** Danh sách sản phẩm có phân trang + tìm kiếm theo tên + lọc theo danh mục. */
+/** Danh sách sản phẩm có phân trang + tìm kiếm theo tên + lọc theo danh mục và khoảng giá. */
 const LIST_PRODUCTS = `
 MATCH (p:Product)
 WHERE ($search = '' OR toLower(p.title) CONTAINS $search)
   AND ($categoryId IS NULL OR EXISTS { (p)-[:BELONGS_TO]->(:Category {category_id: $categoryId}) })
+  AND ($minPrice IS NULL OR p.final_price >= $minPrice)
+  AND ($maxPrice IS NULL OR p.final_price <= $maxPrice)
 OPTIONAL MATCH (p)-[:BELONGS_TO]->(c:Category)
 RETURN p.id            AS id,
        p.title         AS title,
@@ -29,9 +33,18 @@ RETURN p.id            AS id,
        coalesce(p.stock, 0) AS stock,
        c.category_id   AS category_id,
        c.category_name AS category_name
-ORDER BY coalesce(p.rating, 0) DESC, p.id ASC
+ORDER BY
+  CASE WHEN $sort = 'gia_tang' THEN p.final_price END ASC,
+  CASE WHEN $sort = 'gia_giam' THEN p.final_price END DESC,
+  coalesce(p.rating, 0) DESC,
+  p.id ASC
 SKIP $skip LIMIT $limit
 `;
+// Ghi chú về ORDER BY dạng CASE: Cypher không cho truyền TÊN CỘT sắp xếp qua
+// tham số, mà nối chuỗi động vào câu lệnh thì mở đường cho chèn Cypher. Cách
+// này giữ câu lệnh cố định: mỗi lượt chỉ có đúng một nhánh CASE trả giá trị
+// khác NULL, các nhánh còn lại trả NULL cho MỌI dòng nên thành vô hiệu. Không
+// chọn sắp xếp nào thì cả hai nhánh đều NULL, rơi về thứ tự cũ theo đánh giá.
 
 /** Chi tiết 1 sản phẩm kèm tên danh mục + vài chỉ số đồ thị để hiển thị. */
 const GET_PRODUCT_BY_ID = `
@@ -238,6 +251,102 @@ RETURN p.id             AS id,
        cat.category_name AS category_name,
        score
 ORDER BY score DESC, coalesce(p.rating, 0) DESC, p.id ASC
+LIMIT $limit
+`;
+
+// ---------------------------------------------------------------------------
+// Biến thể CÓ LỌC của Query A và Query C
+// ---------------------------------------------------------------------------
+//
+// VÌ SAO TÁCH RA THÀNH CÂU RIÊNG THAY VÌ SỬA THẲNG QUERY A/C:
+// nguyên văn hai câu gốc đã được trích trong báo cáo (Chương 5). Thêm điều kiện
+// lọc vào đó thì báo cáo không còn khớp mã nguồn nữa. Nên giữ nguyên bản gốc —
+// vẫn là câu chạy mặc định khi người dùng không bật bộ lọc nào — và chỉ dùng
+// bản có lọc dưới đây khi khách thật sự chọn danh mục hoặc khoảng giá.
+//
+// Phần duyệt đồ thị của hai bản hoàn toàn giống nhau; khác biệt duy nhất là mấy
+// dòng WHERE lọc trên sản phẩm ĐƯỢC GỢI Ý (p2 / p), không đụng tới cách tính điểm.
+
+/** Query A + lọc theo danh mục / khoảng giá trên sản phẩm được gợi ý. */
+const RECOMMEND_FOR_CUSTOMER_FILTERED = `
+MATCH (c1:Customer {customer_id: $customerId})-[:BOUGHT]->(p1:Product)
+      <-[:BOUGHT]-(c2:Customer)-[:BOUGHT]->(p2:Product)
+WHERE c1 <> c2
+  AND NOT (c1)-[:BOUGHT]->(p2)
+  AND ($minPrice IS NULL OR p2.final_price >= $minPrice)
+  AND ($maxPrice IS NULL OR p2.final_price <= $maxPrice)
+  AND ($categoryId IS NULL OR EXISTS { (p2)-[:BELONGS_TO]->(:Category {category_id: $categoryId}) })
+WITH p2, count(DISTINCT c2) AS score
+OPTIONAL MATCH (p2)-[:BELONGS_TO]->(cat:Category)
+RETURN p2.id AS id, p2.title AS title, p2.final_price AS final_price,
+       p2.rating AS rating, p2.image AS image,
+       coalesce(p2.stock, 0) AS stock,
+       cat.category_id AS category_id, cat.category_name AS category_name, score
+ORDER BY
+  CASE WHEN $sort = 'gia_tang' THEN p2.final_price END ASC,
+  CASE WHEN $sort = 'gia_giam' THEN p2.final_price END DESC,
+  score DESC, coalesce(p2.rating, 0) DESC, p2.id ASC
+LIMIT $limit
+`;
+
+/** Query C + lọc theo danh mục / khoảng giá. */
+const POPULAR_PRODUCTS_FILTERED = `
+MATCH (p:Product)<-[:BOUGHT]-(c:Customer)
+WHERE ($minPrice IS NULL OR p.final_price >= $minPrice)
+  AND ($maxPrice IS NULL OR p.final_price <= $maxPrice)
+  AND ($categoryId IS NULL OR EXISTS { (p)-[:BELONGS_TO]->(:Category {category_id: $categoryId}) })
+WITH p, count(DISTINCT c) AS score
+OPTIONAL MATCH (p)-[:BELONGS_TO]->(cat:Category)
+RETURN p.id AS id, p.title AS title, p.final_price AS final_price,
+       p.rating AS rating, p.image AS image,
+       coalesce(p.stock, 0) AS stock,
+       cat.category_id AS category_id, cat.category_name AS category_name, score
+ORDER BY
+  CASE WHEN $sort = 'gia_tang' THEN p.final_price END ASC,
+  CASE WHEN $sort = 'gia_giam' THEN p.final_price END DESC,
+  score DESC, coalesce(p.rating, 0) DESC, p.id ASC
+LIMIT $limit
+`;
+
+// ---------------------------------------------------------------------------
+// Danh mục công khai + tin mua hàng gần đây
+// ---------------------------------------------------------------------------
+
+/**
+ * Danh mục cho ô lọc phía khách hàng.
+ *
+ * Khác ADMIN_LIST_CATEGORIES ở chỗ bỏ qua danh mục rỗng: đưa vào danh sách lọc
+ * một danh mục không có sản phẩm nào chỉ khiến khách chọn xong thấy trang trắng trơn.
+ */
+const LIST_CATEGORIES_PUBLIC = `
+MATCH (cat:Category)
+OPTIONAL MATCH (p:Product)-[:BELONGS_TO]->(cat)
+WITH cat, count(p) AS product_count
+WHERE product_count > 0
+RETURN cat.category_id AS category_id,
+       cat.category_name AS category_name,
+       product_count
+ORDER BY cat.category_name ASC
+`;
+
+/**
+ * Các lượt mua gần nhất, phục vụ dòng tin chạy trên trang chủ.
+ *
+ * CHỈ lấy đơn đã thanh toán (PAID/COMPLETED) — đơn còn chờ thanh toán hoặc đã
+ * huỷ mà đem khoe thì thành thông tin sai.
+ *
+ * Trả về customer_name ĐẦY ĐỦ; việc che bớt tên do tầng route lo, để chỗ nào
+ * cần tên thật vẫn dùng được câu này.
+ */
+const RECENT_PURCHASES = `
+MATCH (c:Customer)-[:PLACED]->(o:Order)-[ct:CONTAINS]->(p:Product)
+WHERE o.status IN ['PAID', 'COMPLETED']
+RETURN c.customer_name AS customer_name,
+       p.id            AS product_id,
+       p.title         AS product_title,
+       ct.unit_price   AS price,
+       o.created_at    AS bought_at
+ORDER BY o.created_at DESC
 LIMIT $limit
 `;
 
@@ -494,6 +603,10 @@ module.exports = {
   SYNC_CUSTOMER,
   GET_CUSTOMER_BY_FIREBASE_UID,
   POPULAR_PRODUCTS,
+  RECOMMEND_FOR_CUSTOMER_FILTERED,
+  POPULAR_PRODUCTS_FILTERED,
+  LIST_CATEGORIES_PUBLIC,
+  RECENT_PURCHASES,
   BUY_PRODUCT,
   CHECK_PRODUCT_EXISTS,
   ADMIN_GET_STATS,

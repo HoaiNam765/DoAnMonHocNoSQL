@@ -13,15 +13,59 @@ function httpError(message, status) {
 }
 
 /**
- * Danh sách sản phẩm
+ * Ghép tham số lọc vào query string, bỏ qua giá trị rỗng.
+ * Dùng chung cho danh sách sản phẩm, gợi ý và bán chạy.
  */
-export async function getProducts(page = 1, limit = 12, search = "") {
-    const response = await fetch(
-        `${API_URL}?page=${page}&limit=${limit}&search=${encodeURIComponent(search)}`
-    );
+function appendFilters(params, { categoryId, minPrice, maxPrice, sort } = {}) {
+    if (categoryId) params.set("categoryId", categoryId);
+    if (minPrice !== "" && minPrice !== null && minPrice !== undefined) {
+        params.set("minPrice", String(minPrice));
+    }
+    if (maxPrice !== "" && maxPrice !== null && maxPrice !== undefined) {
+        params.set("maxPrice", String(maxPrice));
+    }
+    if (sort) params.set("sort", sort);
+    return params;
+}
+
+/**
+ * Danh sách sản phẩm
+ * @param {object} filters { categoryId, minPrice, maxPrice }
+ */
+export async function getProducts(page = 1, limit = 12, search = "", filters = {}) {
+    const params = new URLSearchParams({
+        page: String(page),
+        limit: String(limit),
+        search,
+    });
+    appendFilters(params, filters);
+
+    const response = await fetch(`${API_URL}?${params}`);
 
     if (!response.ok) {
         throw httpError("Không lấy được danh sách sản phẩm", response.status);
+    }
+
+    return response.json();
+}
+
+/** Danh mục cho ô lọc — công khai, không cần đăng nhập. */
+export async function getCategories() {
+    const response = await fetch(`${API_URL}/categories`);
+
+    if (!response.ok) {
+        throw httpError("Không lấy được danh mục", response.status);
+    }
+
+    return response.json();
+}
+
+/** Các lượt mua gần nhất cho dòng tin chạy ở trang chủ. */
+export async function getRecentPurchases(limit = 10) {
+    const response = await fetch(`${API_URL}/recent-purchases?limit=${limit}`);
+
+    if (!response.ok) {
+        throw httpError("Không lấy được tin mua hàng", response.status);
     }
 
     return response.json();
@@ -52,8 +96,11 @@ export async function getProductById(productId, token = null) {
 /**
  * Lấy danh sách sản phẩm phổ biến
  */
-export async function getPopularProducts(limit = 8) {
-    const response = await fetch(`${API_URL}/popular?limit=${limit}`);
+export async function getPopularProducts(limit = 8, filters = {}) {
+    const params = new URLSearchParams({ limit: String(limit) });
+    appendFilters(params, filters);
+
+    const response = await fetch(`${API_URL}/popular?${params}`);
 
     if (!response.ok) {
         throw httpError("Không lấy được danh sách sản phẩm phổ biến", response.status);

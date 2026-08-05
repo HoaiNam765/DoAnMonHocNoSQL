@@ -169,3 +169,68 @@ trên biểu tượng giỏ ở Header tự cập nhật. Chưa đăng nhập th
 
 **Không gọi Gemini trực tiếp từ frontend**: API key nằm ở backend, nếu để trong
 mã frontend thì ai mở DevTools cũng lấy được và dùng hết hạn mức.
+
+## Sửa lỗi trang trắng
+
+**File mới:** `components/ErrorBoundary.jsx`, `pages/NotFound.jsx`
+
+Ba nguyên nhân, sửa cả ba:
+
+1. **Thiếu route bắt-tất-cả** (nguyên nhân chính, tái hiện được). React Router
+   không tự dựng trang 404 — mọi URL không khớp route nào đều không render gì,
+   ra đúng một trang trắng. Đã thêm `<Route path="*" element={<NotFound />} />`.
+
+2. **Hook gọi sau câu return có điều kiện** trong `ProductList.jsx`. `useState`
+   và `useEffect` nằm dưới `if (products rỗng) return ...`, nên khi danh sách
+   chuyển giữa rỗng và có hàng thì số hook đổi giữa hai lần render — React ném
+   lỗi ngay lúc render. Chưa nổ trong thực tế vì màn hình "Đang tải" gỡ component
+   ra gắn lại mỗi lần, nhưng là bom hẹn giờ. Đã đưa hook lên trước.
+
+3. **Không có ErrorBoundary.** Bất kỳ lỗi render nào cũng làm React gỡ sạch cây
+   giao diện. Nay lỗi bị chặn lại và hiện trang xin lỗi kèm nút tải lại / về
+   trang chủ, đồng thời in chi tiết ra console để còn lần theo được.
+
+## Dòng tin mua hàng ở trang chủ
+
+**File mới:** `components/PurchaseTicker.jsx`
+
+Hiện luân phiên các lượt mua **thật** (đơn đã thanh toán), 4 giây đổi một tin.
+Chưa có đơn nào thì ẩn hẳn dải tin thay vì bịa tin cho đẹp.
+
+Tên khách được backend che bớt trước khi gửi ra ("Nam Đặng Hoài" → "Nam Đ. H.")
+vì trang chủ ai cũng xem được — ghép họ tên đầy đủ với món vừa mua là đủ để lộ
+thói quen mua sắm của người có thật.
+
+## Lọc theo giá và danh mục
+
+**File mới:** `components/ProductFilters.jsx`
+
+Dùng chung cho cả ba danh sách: sản phẩm, gợi ý và bán chạy. Mỗi danh sách giữ
+bộ lọc RIÊNG nên lọc mục này không ảnh hưởng mục kia.
+
+Có sẵn 5 mức giá bấm nhanh (dưới 100k, 100k–500k, 500k–1tr, trên 1tr) và ô nhập
+giá tuỳ chọn cho ai cần chính xác. Lọc chạy ở phía Neo4j chứ không lọc trong
+trình duyệt, nên phân trang và tổng số vẫn đúng.
+
+**Lưu ý khi sửa tiếp:** thanh lọc phải nằm NGOÀI nhánh `loading`. Để bên trong
+thì mỗi lần lọc nó bị gỡ ra gắn lại, mất lựa chọn và tải lại danh mục. Tương tự,
+khi lọc ra 0 kết quả vẫn phải giữ thanh lọc — nếu ẩn cả mục đi thì khách không
+còn chỗ nào bấm "Bỏ lọc", kẹt luôn.
+
+## "Mua ngay" không còn đi qua giỏ hàng
+
+`ProductDetail` tách hẳn hai nút: "Thêm vào giỏ" vẫn như cũ, còn "Mua ngay" nay
+chuyển thẳng sang `/checkout?muaNgay=<mã sản phẩm>&sl=<số lượng>` mà **không gọi
+API thêm giỏ**. Bỏ ngang giữa chừng thì không có gì đọng lại trong giỏ.
+
+`Checkout` chạy hai chế độ, phân biệt bằng tham số `muaNgay` trên đường dẫn:
+- Có tham số → chỉ hiện đúng món đó, đặt qua `POST /api/orders/buy-now`.
+- Không có → lấy hàng trong giỏ như cũ.
+
+**Vì sao nhận biết qua ĐƯỜNG DẪN chứ không phải router state hay sessionStorage:**
+router state mất khi khách F5; còn nhớ tạm trong bộ nhớ trình duyệt thì lại lẫn
+sang lượt sau — khách mua ngay rồi bỏ ngang, lát sau vào giỏ bấm đặt hàng sẽ thấy
+nhầm món cũ. Để trên đường dẫn thì F5 vẫn đúng mà vào từ giỏ cũng đúng.
+
+Thông tin hiển thị (tên, ảnh, giá) đi kèm qua router state cho đường thường để
+khỏi gọi lại API; mất state thì trang tự tải lại theo mã trên đường dẫn.

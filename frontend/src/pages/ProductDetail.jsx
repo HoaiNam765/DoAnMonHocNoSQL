@@ -52,30 +52,48 @@ function ProductDetail() {
         loadProduct();
     }, [id, user, retryCount]);
 
-    /**
-     * Thêm vào giỏ. `goToCheckout = true` là nút "Mua ngay" — thêm xong đi
-     * thẳng sang trang đặt hàng, không tạo BOUGHT ngay như trước nữa.
-     * BOUGHT chỉ sinh ra khi nhân viên xác nhận khách đã thanh toán.
-     */
-    const handleAddToCart = async (goToCheckout = false) => {
+    /** Thêm vào giỏ (nút "Thêm vào giỏ"). */
+    const handleAddToCart = async () => {
         if (!user) return navigate("/login");
 
         try {
             setBuying(true);
             await addItem(id, quantity);
-
-            if (goToCheckout) {
-                navigate("/checkout");
-            } else {
-                setAdded(true);
-                setTimeout(() => setAdded(false), 1800);
-            }
+            setAdded(true);
+            setTimeout(() => setAdded(false), 1800);
         } catch (err) {
             console.error(err);
             alert(err.message || "Không thêm được vào giỏ hàng.");
         } finally {
             setBuying(false);
         }
+    };
+
+    /**
+     * Mua ngay — đi thẳng sang trang đặt hàng, KHÔNG bỏ vào giỏ.
+     *
+     * Trước đây nút này thêm sản phẩm vào giỏ rồi mới chuyển trang, dẫn tới hai
+     * chuyện khó chịu: khách đổi ý bỏ ngang thì món đó vẫn nằm lại trong giỏ,
+     * và lần "mua ngay" sau sẽ hiện kèm cả hàng cũ trong giỏ. Nay mã sản phẩm
+     * và số lượng đi theo đường dẫn, đơn chỉ gồm đúng món vừa bấm.
+     *
+     * Dữ liệu hiển thị gửi kèm qua router state để trang sau khỏi gọi lại API;
+     * mất state (khi tải lại trang) thì trang đó tự lấy theo mã trên đường dẫn.
+     */
+    const handleBuyNow = () => {
+        if (!user) return navigate("/login");
+
+        navigate(`/checkout?muaNgay=${encodeURIComponent(id)}&sl=${quantity}`, {
+            state: {
+                muaNgay: {
+                    productId: id,
+                    quantity,
+                    title: product?.title,
+                    image: product?.image,
+                    final_price: product?.final_price,
+                },
+            },
+        });
     };
 
     if (loading) {
@@ -169,7 +187,7 @@ function ProductDetail() {
 
                     <div style={{ display: "flex", gap: "12px", marginTop: "20px", flexWrap: "wrap" }}>
                         <button
-                            onClick={() => handleAddToCart(false)}
+                            onClick={handleAddToCart}
                             disabled={buying}
                             style={{
                                 padding: "12px 24px",
@@ -187,7 +205,7 @@ function ProductDetail() {
                         </button>
 
                         <button
-                            onClick={() => handleAddToCart(true)}
+                            onClick={handleBuyNow}
                             disabled={buying}
                             style={{
                                 padding: "12px 32px",

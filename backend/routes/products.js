@@ -10,6 +10,7 @@ const {
   buildPagination,
 } = require('../utils/http');
 const { optionalAuth } = require('../middleware/auth');
+const { parseFilters, maskCustomerName } = require('../utils/filters');
 
 const router = express.Router();
 
@@ -25,13 +26,14 @@ router.get(
   asyncHandler(async (req, res) => {
     const { page, limit, skip } = parsePagination(req.query);
     const search = parseSearch(req.query.search);
-    const categoryId = req.query.categoryId ? String(req.query.categoryId).trim() : null;
+    const { categoryId, minPrice, maxPrice, sort } = parseFilters(req.query);
 
-    const params = { search, categoryId };
+    const params = { search, categoryId, minPrice, maxPrice };
 
     const [countRows, rows] = await Promise.all([
+      // Đếm thì không cần sắp xếp — tổng số không đổi theo thứ tự
       readQuery(q.COUNT_PRODUCTS, params),
-      readQuery(q.LIST_PRODUCTS, { ...params, skip: int(skip), limit: int(limit) }),
+      readQuery(q.LIST_PRODUCTS, { ...params, sort, skip: int(skip), limit: int(limit) }),
     ]);
 
     const total = countRows[0]?.total ?? 0;
@@ -56,13 +58,67 @@ router.get(
   '/popular',
   asyncHandler(async (req, res) => {
     const limit = Math.min(Math.max(1, parseInt(req.query.limit, 10) || 8), MAX_POPULAR);
+    const { categoryId, minPrice, maxPrice, sort, coLoc } = parseFilters(req.query);
 
-    const rows = await readQuery(q.POPULAR_PRODUCTS, { limit: int(limit) });
+    // Không bật tuỳ chọn nào thì chạy đúng Query C nguyên bản (bản được trích
+    // trong báo cáo); có lọc hoặc đổi sắp xếp mới dùng biến thể.
+    const rows = coLoc
+      ? await readQuery(q.POPULAR_PRODUCTS_FILTERED, {
+          limit: int(limit),
+          categoryId,
+          minPrice,
+          maxPrice,
+          sort,
+        })
+      : await readQuery(q.POPULAR_PRODUCTS, { limit: int(limit) });
 
     res.json({
       source: 'popularity', // Query C: đếm cạnh BOUGHT, không duyệt sâu đồ thị
+      filtered: coLoc,
       count: rows.length,
       data: rows,
+    });
+  })
+);
+
+/**
+ * GET /api/products/categories
+ * Danh mục cho ô lọc phía khách hàng. Công khai, không cần token —
+ * trang chủ ai cũng xem được nên bộ lọc cũng phải dùng được khi chưa đăng nhập.
+ */
+router.get(
+  '/categories',
+  asyncHandler(async (req, res) => {
+    const rows = await readQuery(q.LIST_CATEGORIES_PUBLIC, {});
+    res.json({ count: rows.length, data: rows });
+  })
+);
+
+/**
+ * GET /api/products/recent-purchases
+ * Các lượt mua gần nhất, phục vụ dòng tin chạy trên trang chủ.
+ *
+ * Tên khách được CHE BỚT trước khi trả về: trang chủ là nơi công khai, ghép họ
+ * tên đầy đủ với món vừa mua là đủ để lộ thói quen mua sắm của người có thật.
+ */
+const MAX_RECENT = 20;
+
+router.get(
+  '/recent-purchases',
+  asyncHandler(async (req, res) => {
+    const limit = Math.min(Math.max(1, parseInt(req.query.limit, 10) || 10), MAX_RECENT);
+
+    const rows = await readQuery(q.RECENT_PURCHASES, { limit: int(limit) });
+
+    res.json({
+      count: rows.length,
+      data: rows.map((row) => ({
+        customer_name: maskCustomerName(row.customer_name),
+        product_id: row.product_id,
+        product_title: row.product_title,
+        price: row.price,
+        bought_at: row.bought_at,
+      })),
     });
   })
 );

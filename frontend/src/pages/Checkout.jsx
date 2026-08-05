@@ -1,20 +1,51 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
 import { useAuth } from "../context/AuthContext";
 import { useCart } from "../context/CartContext";
-import { createOrder, getMyProfile, formatPrice } from "../services/shopService";
+import { createOrder, createOrderBuyNow, getMyProfile, formatPrice } from "../services/shopService";
+import { getProductById } from "../services/productService";
 
 /**
  * Trang đặt hàng: nhập thông tin người nhận rồi tạo đơn.
  *
  * Không có bước thanh toán online — đơn tạo ra ở trạng thái "Chờ thanh toán",
  * khách cầm mã đơn tới cửa hàng trả tiền, nhân viên xác nhận trên trang quản trị.
+ *
+ * Trang này chạy ở HAI CHẾ ĐỘ:
+ *
+ *  1. Đặt từ giỏ — vào thẳng /checkout, lấy toàn bộ hàng trong giỏ.
+ *  2. Mua ngay  — vào /checkout?muaNgay=<mã sản phẩm>&sl=<số lượng>, chỉ gồm
+ *     đúng món đó, KHÔNG đụng gì tới giỏ hàng.
+ *
+ * Vì sao nhận biết chế độ qua ĐƯỜNG DẪN chứ không phải state của router: state
+ * mất khi tải lại trang, còn nhớ tạm trong bộ nhớ trình duyệt thì lại lẫn sang
+ * lượt sau — khách bấm mua ngay rồi bỏ ngang, lát sau vào giỏ bấm đặt hàng sẽ
+ * thấy nhầm món cũ. Để trên đường dẫn thì F5 vẫn đúng và vào từ giỏ cũng đúng.
  */
+const SL_TOI_DA = 99;
+
 function Checkout() {
     const { user, customer } = useAuth();
     const { cart, refreshCart } = useCart();
     const navigate = useNavigate();
+    const location = useLocation();
+    const [searchParams] = useSearchParams();
+
+    const muaNgayId = searchParams.get("muaNgay");
+    const laMuaNgay = Boolean(muaNgayId);
+    const muaNgaySl = Math.min(
+        Math.max(1, parseInt(searchParams.get("sl"), 10) || 1),
+        SL_TOI_DA
+    );
+
+    // Thông tin hiển thị của món "mua ngay". Đường thường thì trang trước đã gửi
+    // kèm nên khỏi gọi API; mất state (F5) mới phải tải lại theo mã trên URL.
+    const [muaNgayItem, setMuaNgayItem] = useState(() => {
+        const guiKem = location.state?.muaNgay;
+        return guiKem && guiKem.productId === muaNgayId ? guiKem : null;
+    });
+    const [dangTaiItem, setDangTaiItem] = useState(laMuaNgay && !location.state?.muaNgay);
 
     const [form, setForm] = useState({ receiverName: "", phone: "", address: "", note: "" });
     const [submitting, setSubmitting] = useState(false);
@@ -51,10 +82,64 @@ function Checkout() {
         };
     }, [user, customer]);
 
-    // Giỏ rỗng thì không có gì để đặt — trừ khi vừa đặt hàng xong
+    // Tải lại thông tin món "mua ngay" khi state bị mất (khách F5 trang này)
     useEffect(() => {
+        if (!laMuaNgay || muaNgayItem) return undefined;
+
+        let cancelled = false;
+
+        (async () => {
+            try {
+                setDangTaiItem(true);
+                const token = user ? await user.getIdToken() : null;
+                const { data } = await getProductById(muaNgayId, token);
+                if (cancelled) return;
+                setMuaNgayItem({
+                    productId: data.id,
+                    quantity: muaNgaySl,
+                    title: data.title,
+                    image: data.image,
+                    final_price: data.final_price,
+                });
+            } catch (err) {
+                console.error("[Checkout] Không tải được sản phẩm mua ngay:", err);
+                if (!cancelled) setError("Không tải được sản phẩm. Bạn thử chọn lại sản phẩm nhé.");
+            } finally {
+                if (!cancelled) setDangTaiItem(false);
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [laMuaNgay, muaNgayId, muaNgaySl, muaNgayItem, user]);
+
+    // Giỏ rỗng thì không có gì để đặt — trừ khi vừa đặt hàng xong.
+    // Chế độ mua ngay không liên quan tới giỏ nên bỏ qua kiểm tra này, không thì
+    // khách có giỏ rỗng bấm mua ngay sẽ bị đá về trang giỏ hàng.
+    useEffect(() => {
+        if (laMuaNgay) return;
         if (!placed && cart.items.length === 0) navigate("/cart", { replace: true });
-    }, [cart.items.length, navigate, placed]);
+    }, [laMuaNgay, cart.items.length, navigate, placed]);
+
+    // Danh sách hiển thị + tổng tiền, tuỳ chế độ
+    const donGia = Number(muaNgayItem?.final_price ?? 0);
+    const items = laMuaNgay
+        ? muaNgayItem
+            ? [
+                  {
+                      id: muaNgayItem.productId,
+                      title: muaNgayItem.title,
+                      image: muaNgayItem.image,
+                      final_price: donGia,
+                      quantity: muaNgaySl,
+                      line_total: donGia * muaNgaySl,
+                  },
+              ]
+            : []
+        : cart.items;
+
+    const tongTien = laMuaNgay ? donGia * muaNgaySl : cart.total;
 
     const update = (field) => (e) => setForm({ ...form, [field]: e.target.value });
 
@@ -67,11 +152,26 @@ function Checkout() {
         }
         if (!form.address.trim()) return setError("Vui lòng nhập địa chỉ.");
 
+        if (laMuaNgay && !muaNgayItem) return setError("Chưa có sản phẩm để đặt.");
+
         try {
             setSubmitting(true);
             setError("");
 
             const token = await user.getIdToken();
+
+            if (laMuaNgay) {
+                // Đặt thẳng một sản phẩm — không đọc, không xoá gì trong giỏ,
+                // nên cũng không cần làm mới giỏ sau khi đặt xong.
+                const { data } = await createOrderBuyNow(token, {
+                    productId: muaNgayId,
+                    quantity: muaNgaySl,
+                    ...form,
+                });
+                navigate(`/orders/${data.order_id}`, { replace: true });
+                return;
+            }
+
             const { data } = await createOrder(token, form);
 
             setPlaced(true); // chặn effect "giỏ rỗng → /cart" trước khi dọn giỏ
@@ -87,7 +187,14 @@ function Checkout() {
 
     return (
         <>
-            <h1>Đặt hàng</h1>
+            <h1>{laMuaNgay ? "Mua ngay" : "Đặt hàng"}</h1>
+
+            {laMuaNgay && (
+                <p style={muaNgayNoteStyle}>
+                    Bạn đang mua nhanh một sản phẩm. Đơn này <strong>không lấy hàng trong giỏ</strong> và
+                    cũng không thêm gì vào giỏ — thoát ra giữa chừng thì giỏ hàng vẫn nguyên như cũ.
+                </p>
+            )}
 
             <div style={{ display: "flex", gap: "30px", marginTop: "20px", flexWrap: "wrap" }}>
                 {/* Thông tin người nhận */}
@@ -133,7 +240,11 @@ function Checkout() {
                         </p>
                     </div>
 
-                    <button type="submit" disabled={submitting} style={submitButton(submitting)}>
+                    <button
+                        type="submit"
+                        disabled={submitting || items.length === 0}
+                        style={submitButton(submitting || items.length === 0)}
+                    >
                         {submitting ? "Đang tạo đơn..." : "Xác nhận đặt hàng"}
                     </button>
                 </form>
@@ -143,25 +254,31 @@ function Checkout() {
                     <h3 style={{ marginBottom: "16px" }}>Đơn hàng của bạn</h3>
 
                     <div style={{ border: "1px solid #eee", borderRadius: "10px", padding: "16px" }}>
-                        {cart.items.map((item) => (
-                            <div key={item.id} style={summaryRow}>
-                                <img src={item.image} alt={item.title} style={summaryThumb} />
-                                <div style={{ flex: 1, minWidth: 0 }}>
-                                    <div style={{ fontSize: "14px" }}>{item.title}</div>
-                                    <div style={{ color: "#888", fontSize: "13px" }}>
-                                        {formatPrice(item.final_price)} × {item.quantity}
+                        {dangTaiItem ? (
+                            <p style={{ color: "#888", margin: 0 }}>Đang tải sản phẩm...</p>
+                        ) : items.length === 0 ? (
+                            <p style={{ color: "#888", margin: 0 }}>Chưa có sản phẩm nào.</p>
+                        ) : (
+                            items.map((item) => (
+                                <div key={item.id} style={summaryRow}>
+                                    <img src={item.image} alt={item.title} style={summaryThumb} />
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ fontSize: "14px" }}>{item.title}</div>
+                                        <div style={{ color: "#888", fontSize: "13px" }}>
+                                            {formatPrice(item.final_price)} × {item.quantity}
+                                        </div>
                                     </div>
+                                    <strong style={{ fontSize: "14px", whiteSpace: "nowrap" }}>
+                                        {formatPrice(item.line_total)}
+                                    </strong>
                                 </div>
-                                <strong style={{ fontSize: "14px", whiteSpace: "nowrap" }}>
-                                    {formatPrice(item.line_total)}
-                                </strong>
-                            </div>
-                        ))}
+                            ))
+                        )}
 
                         <div style={totalRow}>
                             <span>Tổng cộng</span>
                             <strong style={{ fontSize: "22px", color: "#e53935" }}>
-                                {formatPrice(cart.total)}
+                                {formatPrice(tongTien)}
                             </strong>
                         </div>
                     </div>
@@ -189,6 +306,17 @@ const errorStyle = {
     padding: "10px 14px",
     borderRadius: "6px",
     margin: "0 0 12px",
+};
+
+const muaNgayNoteStyle = {
+    marginTop: "10px",
+    padding: "10px 14px",
+    background: "#fff8e1",
+    border: "1px solid #ffe0a3",
+    borderRadius: "8px",
+    color: "#6b5320",
+    fontSize: "14px",
+    lineHeight: 1.6,
 };
 
 const noticeStyle = {

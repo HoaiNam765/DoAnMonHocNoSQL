@@ -16,7 +16,8 @@
     "setup:stock": "node scripts/setup-stock.js",
     "test:admin": "node scripts/test-admin-stats.js",
     "test:block": "node scripts/test-block.js",
-    "test:search": "node scripts/test-order-search.js"
+    "test:search": "node scripts/test-order-search.js",
+    "test:buynow": "node scripts/test-buynow.js"
   },
   "keywords": [],
   "author": "",

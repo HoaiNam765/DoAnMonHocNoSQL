@@ -11,6 +11,7 @@ const {
   buildPagination,
 } = require('../utils/http');
 const { verifyToken } = require('../middleware/auth');
+const { parseFilters } = require('../utils/filters');
 
 const router = express.Router();
 
@@ -152,10 +153,24 @@ router.get(
       throw new HttpError(404, `Không tìm thấy khách hàng có customer_id = ${customerId}`);
     }
 
-    const rows = await readQuery(q.RECOMMEND_FOR_CUSTOMER, { customerId, limit: int(limit) });
+    const { categoryId, minPrice, maxPrice, sort, coLoc } = parseFilters(req.query);
+
+    // Không bật tuỳ chọn nào thì chạy đúng Query A nguyên bản (bản được trích
+    // trong báo cáo); có lọc hoặc đổi sắp xếp mới dùng biến thể.
+    const rows = coLoc
+      ? await readQuery(q.RECOMMEND_FOR_CUSTOMER_FILTERED, {
+          customerId,
+          limit: int(limit),
+          categoryId,
+          minPrice,
+          maxPrice,
+          sort,
+        })
+      : await readQuery(q.RECOMMEND_FOR_CUSTOMER, { customerId, limit: int(limit) });
 
     res.json({
       source: 'collaborative-filtering', // Query A: (c1)-[:BOUGHT]->(p1)<-[:BOUGHT]-(c2)-[:BOUGHT]->(p2)
+      filtered: coLoc,
       customerId,
       customerName: customer[0].customer_name,
       count: rows.length,

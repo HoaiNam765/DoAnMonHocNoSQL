@@ -69,6 +69,85 @@ router.post(
   })
 );
 
+/**
+ * POST /api/orders/buy-now — đặt hàng thẳng cho MỘT sản phẩm ("Mua ngay")
+ *
+ * Body: { productId, quantity, receiverName, phone, address, note?, paymentMethod? }
+ *
+ * KHÁC luồng giỏ hàng ở chỗ hoàn toàn không đụng tới IN_CART:
+ *   - Khách bấm "Mua ngay" rồi bỏ ngang → không có gì đọng lại trong giỏ.
+ *   - Đơn chỉ gồm đúng sản phẩm vừa bấm, không lẫn hàng có sẵn trong giỏ.
+ *
+ * Vẫn tạo ở trạng thái PENDING và vẫn trừ kho ở bước xác nhận thanh toán,
+ * giống hệt đơn đặt từ giỏ.
+ */
+const SO_LUONG_TOI_DA = 99;
+
+router.post(
+  '/buy-now',
+  asyncHandler(async (req, res) => {
+    const customerId = customerIdOf(req);
+    const {
+      productId,
+      quantity = 1,
+      receiverName,
+      phone,
+      address,
+      note,
+      paymentMethod = 'COD',
+    } = req.body ?? {};
+
+    if (!String(productId ?? '').trim()) throw new HttpError(400, 'Thiếu mã sản phẩm');
+    if (!String(receiverName ?? '').trim()) throw new HttpError(400, 'Thiếu tên người nhận');
+    if (!String(phone ?? '').trim()) throw new HttpError(400, 'Thiếu số điện thoại');
+    if (!String(address ?? '').trim()) throw new HttpError(400, 'Thiếu địa chỉ');
+
+    // Không kẹp thầm lặng về khoảng hợp lệ: khách gửi 99999 mà hệ thống lặng lẽ
+    // tạo đơn 99 món là tạo đơn khác với thứ khách yêu cầu. Báo lỗi rõ ràng hơn.
+    const soLuong = Number(quantity);
+    if (!Number.isInteger(soLuong) || soLuong < 1 || soLuong > SO_LUONG_TOI_DA) {
+      throw new HttpError(400, `Số lượng phải là số nguyên từ 1 đến ${SO_LUONG_TOI_DA}`);
+    }
+
+    const normalizedPaymentMethod = String(paymentMethod || 'COD').toUpperCase();
+    if (!['COD', 'ZALOPAY'].includes(normalizedPaymentMethod)) {
+      throw new HttpError(400, 'Phương thức thanh toán không hợp lệ');
+    }
+
+    // Sản phẩm có tồn tại không + còn đủ hàng không.
+    //
+    // Cố tình BỎ QUA số lượng đang nằm trong giỏ mà câu lệnh này trả về: hàng
+    // trong giỏ chưa bị giữ chỗ (kho chỉ trừ khi thanh toán), nên nó không được
+    // phép làm giảm số lượng khách mua ngay được.
+    const [stockRow] = await readQuery(stockQ.GET_PRODUCT_STOCK, {
+      productId: String(productId),
+      customerId,
+    });
+
+    if (!stockRow) throw new HttpError(404, 'Không tìm thấy sản phẩm');
+    if (stockRow.stock < soLuong) {
+      throw new HttpError(409, `Không đủ hàng: chỉ còn ${stockRow.stock} sản phẩm`);
+    }
+
+    const rows = await writeQuery(q.ORDER_CREATE_DIRECT, {
+      customerId,
+      productId: String(productId),
+      quantity: int(soLuong),
+      orderId: generateOrderCode(),
+      status: 'PENDING',
+      paymentMethod: normalizedPaymentMethod,
+      receiverName: String(receiverName).trim(),
+      phone: String(phone).trim(),
+      address: String(address).trim(),
+      note: String(note ?? '').trim(),
+    });
+
+    if (rows.length === 0) throw new HttpError(500, 'Không tạo được đơn hàng');
+
+    res.status(201).json({ data: rows[0] });
+  })
+);
+
 /** GET /api/orders — danh sách đơn của chính mình */
 router.get(
   '/',

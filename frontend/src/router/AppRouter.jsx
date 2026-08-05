@@ -2,6 +2,8 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 
 import MainLayout from "../layouts/MainLayout";
 import ProtectedRoute from "../components/ProtectedRoute";
+import ErrorBoundary from "../components/ErrorBoundary";
+import NotFound from "../pages/NotFound";
 
 import Home from "../pages/Home";
 import ProductDetail from "../pages/ProductDetail";
@@ -20,6 +22,7 @@ import AdminOrders from "../pages/admin/AdminOrders";
 function AppRouter() {
     return (
         <BrowserRouter>
+            <ErrorBoundary>
             <Routes>
                 <Route path="/login" element={<Login />} />
                 <Route path="/register" element={<Register />} />
@@ -81,8 +84,13 @@ function AppRouter() {
                             </ProtectedRoute>
                         }
                     />
+
+                    {/* Bắt mọi đường dẫn không khớp route nào ở trên.
+                        Thiếu route này thì URL lạ sẽ ra trang trắng hoàn toàn. */}
+                    <Route path="*" element={<NotFound />} />
                 </Route>
             </Routes>
+            </ErrorBoundary>
         </BrowserRouter>
     );
 }

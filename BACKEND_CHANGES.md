@@ -334,3 +334,97 @@ Bản đầu đặt chung một giới hạn 20 lượt/5 phút cho mọi reques
 đồng thời thì chính giới hạn của mình chặn mất 11 câu — dù không tốn lượt AI nào.
 Đo lại sau khi tách: **18/18 câu trả lời được, 0 lỗi, 0 lượt Gemini, dưới 1 giây**;
 lần chạy thứ hai toàn bộ vào đệm, tổng 112 ms.
+
+## 8. Lọc theo giá / danh mục + tin mua hàng
+
+**File mới:** `backend/utils/filters.js` — đọc tham số lọc và che tên khách.
+
+**Endpoint mới:**
+- `GET /api/products/categories` — danh mục cho ô lọc (công khai, bỏ danh mục rỗng).
+- `GET /api/products/recent-purchases?limit=` — các lượt mua gần nhất cho dòng tin trang chủ.
+
+**Endpoint cũ nhận thêm tham số** `categoryId`, `minPrice`, `maxPrice`:
+`GET /api/products`, `GET /api/products/popular`, `GET /api/customers/:id/recommendations`.
+
+### Giữ nguyên Query A và Query C
+
+Nguyên văn hai câu này đã được trích trong báo cáo (Chương 5). Thêm điều kiện lọc
+vào đó thì báo cáo không còn khớp mã nguồn. Nên đã tách thành
+`RECOMMEND_FOR_CUSTOMER_FILTERED` và `POPULAR_PRODUCTS_FILTERED`, chỉ dùng khi
+khách thật sự bật bộ lọc. Không lọc gì thì vẫn chạy đúng câu gốc như báo cáo mô tả.
+Phản hồi có thêm trường `filtered` để biết câu nào đã chạy.
+
+Riêng `LIST_PRODUCTS` / `COUNT_PRODUCTS` được sửa trực tiếp (thêm hai dòng lọc
+giá) vì hai câu này không xuất hiện trong báo cáo.
+
+### Che tên khách hàng
+
+`maskCustomerName` giữ tên gọi, viết tắt phần còn lại: "Nam Đặng Hoài" → "Nam Đ. H.".
+Che ngay tại backend để tên đầy đủ không rời khỏi máy chủ — dòng tin nằm ở trang
+chủ, người chưa đăng nhập cũng đọc được, mà ghép họ tên đầy đủ với món vừa mua là
+đủ để lộ thói quen mua sắm của một người có thật.
+
+Giá trị lọc không hợp lệ (chữ, số âm) được coi như không lọc thay vì trả lỗi 400 —
+chặn cả trang chỉ vì gõ nhầm một ký tự là quá gắt cho một bộ lọc phụ trợ.
+
+### Sắp xếp theo giá
+
+Tham số `sort` nhận `gia_tang` (giá thấp → cao) hoặc `gia_giam` (cao → thấp).
+Bỏ trống hoặc giá trị lạ thì giữ thứ tự mặc định của từng danh sách.
+
+Cypher không cho truyền TÊN CỘT sắp xếp qua tham số, mà nối chuỗi động vào câu
+lệnh thì mở đường cho chèn Cypher. Nên dùng `ORDER BY` dạng `CASE`:
+
+```cypher
+ORDER BY
+  CASE WHEN $sort = 'gia_tang' THEN p.final_price END ASC,
+  CASE WHEN $sort = 'gia_giam' THEN p.final_price END DESC,
+  coalesce(p.rating, 0) DESC,
+  p.id ASC
+```
+
+Mỗi lượt chỉ một nhánh CASE trả giá trị khác NULL, các nhánh còn lại trả NULL
+cho mọi dòng nên thành vô hiệu — câu lệnh vẫn cố định.
+
+**Bắt buộc giữ `p.id ASC` ở cuối.** Đây là tiêu chí chốt để thứ tự luôn xác
+định. Thiếu nó thì các sản phẩm trùng giá có thể xếp khác nhau giữa hai lần
+truy vấn, khiến `SKIP/LIMIT` trả về sản phẩm bị lặp ở trang này và mất ở trang kia.
+
+`sort` cũng được tính vào cờ `coLoc`: chỉ đổi sắp xếp (không lọc gì) vẫn phải
+dùng biến thể truy vấn, vì câu gốc có thứ tự cố định.
+
+## 9. Nghiệp vụ "Mua ngay" tách khỏi giỏ hàng
+
+**Cypher mới:** `ORDER_CREATE_DIRECT` (`queries/shopCypher.js`)
+**Endpoint mới:** `POST /api/orders/buy-now`
+**Test:** `npm run test:buynow` (19 phép kiểm)
+
+### Vấn đề của cách làm cũ
+
+Nút "Mua ngay" trước đây *thêm sản phẩm vào giỏ* rồi mới chuyển sang trang đặt
+hàng. Hệ quả:
+- Khách đổi ý bỏ ngang → món đó vẫn nằm lại trong giỏ dù họ không hề muốn mua.
+- Lần "mua ngay" sau hiện kèm cả hàng cũ trong giỏ, đơn bị lẫn hàng không mong muốn.
+
+### Cách làm mới
+
+`ORDER_CREATE_DIRECT` tạo Order + đúng một cạnh CONTAINS từ `productId` và
+`quantity`, **không đọc và không xoá `IN_CART`**. Nhờ vậy:
+- Bỏ ngang giữa chừng thì không có gì đọng lại trong giỏ (thực ra chưa gọi API nào).
+- Đơn chỉ gồm đúng món vừa bấm.
+- Hàng đang có sẵn trong giỏ vẫn nguyên vẹn sau khi mua ngay.
+
+Đơn giá vẫn chốt tại thời điểm đặt (đọc `p.final_price` ngay trong câu tạo đơn),
+đơn vẫn ở trạng thái PENDING và kho vẫn chỉ trừ khi xác nhận thanh toán — giống
+hệt đơn đặt từ giỏ.
+
+### Hai quyết định đáng ghi lại
+
+**Số lượng trong giỏ KHÔNG trừ vào lượng mua ngay được.** Hàng nằm trong giỏ
+chưa hề bị giữ chỗ (kho chỉ trừ khi thanh toán), nên nó không được phép làm giảm
+số lượng khách mua ngay. Route cố tình bỏ qua trường `in_cart` mà
+`GET_PRODUCT_STOCK` trả về.
+
+**Không kẹp thầm lặng số lượng.** Bản đầu kẹp về khoảng 1–99 rồi mới kiểm kho,
+nên gửi 99999 vẫn tạo được đơn 99 món — tạo ra đơn khác với thứ khách yêu cầu.
+Nay số lượng ngoài khoảng trả 400 kèm thông báo rõ ràng.

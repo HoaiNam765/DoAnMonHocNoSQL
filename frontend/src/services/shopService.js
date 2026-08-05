@@ -67,6 +67,18 @@ export const createOrder = (token, info) =>
         body: JSON.stringify(info),
     });
 
+/**
+ * Đặt hàng thẳng cho một sản phẩm ("Mua ngay").
+ *
+ * Không đi qua giỏ hàng: bỏ ngang giữa chừng thì không có gì đọng lại trong giỏ,
+ * và đơn tạo ra chỉ gồm đúng sản phẩm này.
+ */
+export const createOrderBuyNow = (token, { productId, quantity, ...info }) =>
+    authFetch("/orders/buy-now", token, {
+        method: "POST",
+        body: JSON.stringify({ productId, quantity, ...info }),
+    });
+
 export const confirmOrderPaid = (token, orderId) =>
     authFetch(`/orders/${orderId}/confirm-paid`, token, { method: "POST" });
 
