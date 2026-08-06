@@ -3,6 +3,7 @@ import {
     createUserWithEmailAndPassword,
     signInWithEmailAndPassword,
     signInWithPopup,
+    sendPasswordResetEmail,
     GoogleAuthProvider,
     signOut,
     onAuthStateChanged,
@@ -88,6 +89,10 @@ export function AuthProvider({ children }) {
         return signInWithPopup(auth, provider);
     };
 
+    const resetPassword = async (email) => {
+        return sendPasswordResetEmail(auth, email);
+    };
+
     const logout = async () => {
         clearSessionMarks(); // phiên sau đếm lại từ đầu
         return signOut(auth);
@@ -123,6 +128,7 @@ export function AuthProvider({ children }) {
                 register,
                 login,
                 loginWithGoogle,
+                resetPassword,
                 logout,
                 refreshCustomer,
             }}
