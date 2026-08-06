@@ -9,6 +9,7 @@ import Home from "../pages/Home";
 import ProductDetail from "../pages/ProductDetail";
 import Login from "../pages/Login";
 import Register from "../pages/Register";
+import ForgotPassword from "../pages/ForgotPassword";
 
 import Cart from "../pages/Cart";
 import Checkout from "../pages/Checkout";
@@ -26,6 +27,7 @@ function AppRouter() {
             <Routes>
                 <Route path="/login" element={<Login />} />
                 <Route path="/register" element={<Register />} />
+                <Route path="/forgot-password" element={<ForgotPassword />} />
                 <Route path="/admin" element={<AdminDashboard />} />
 
                 <Route element={<MainLayout />}>

@@ -104,14 +104,21 @@ function Login() {
                     required
                     style={{ padding: "10px", borderRadius: "4px", border: "1px solid #ccc" }}
                 />
-                <input
-                    type="password"
-                    placeholder="Mật khẩu"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    style={{ padding: "10px", borderRadius: "4px", border: "1px solid #ccc" }}
-                />
+                <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+                    <input
+                        type="password"
+                        placeholder="Mật khẩu"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        required
+                        style={{ padding: "10px", borderRadius: "4px", border: "1px solid #ccc" }}
+                    />
+                    <div style={{ textAlign: "right", marginTop: "2px" }}>
+                        <Link to="/forgot-password" style={{ color: "#1976d2", fontSize: "13px", textDecoration: "none" }}>
+                            Quên mật khẩu?
+                        </Link>
+                    </div>
+                </div>
                 <button disabled={loading} type="submit" style={{ padding: "10px", background: "#1976d2", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", fontWeight: "bold" }}>
                     {loading ? "Đang đăng nhập..." : "Đăng nhập"}
                 </button>
