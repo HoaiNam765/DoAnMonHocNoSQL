@@ -36,6 +36,10 @@ function AdminDashboard() {
     const [modal, setModal] = useState(null);
     const [form, setForm] = useState(createEmptyProduct());
 
+    // Lọc danh mục + sắp xếp cho riêng mục "Kho sản phẩm"
+    const [productCategoryId, setProductCategoryId] = useState("");
+    const [productSort, setProductSort] = useState("");
+
     // Thuộc tính tuỳ ý của sản phẩm đang sửa.
     // `attrGoc` giữ bản đọc từ máy chủ để biết thuộc tính nào vừa bị xoá/đổi tên.
     const [attrDong, setAttrDong] = useState([]);
@@ -90,7 +94,10 @@ function AdminDashboard() {
                     if (!cancelled) setCategories(result.data || []);
                 } else if (section === "products") {
                     const [result, categoryResult] = await Promise.all([
-                        getAdminProducts(token, { page, limit: 8, search: debouncedSearch }),
+                        getAdminProducts(token, {
+                            page, limit: 8, search: debouncedSearch,
+                            categoryId: productCategoryId, sort: productSort,
+                        }),
                         getAdminCategories(token),
                     ]);
                     if (!cancelled) {
@@ -112,7 +119,7 @@ function AdminDashboard() {
         };
         load();
         return () => { cancelled = true; };
-    }, [token, section, page, debouncedSearch, statsRefreshKey]);
+    }, [token, section, page, debouncedSearch, statsRefreshKey, productCategoryId, productSort]);
 
     if (authLoading || checkingAccess) return <Loading />;
     if (!user) return <Navigate to="/login" replace />;
@@ -168,7 +175,8 @@ function AdminDashboard() {
             }
 
             closeModal(); setPage(1);
-            const result = await getAdminProducts(token, { page: 1, limit: 8, search }); setProducts(result);
+            // Giữ nguyên bộ lọc/sắp xếp đang chọn, không thì lưu xong là danh sách nhảy về mặc định
+            const result = await getAdminProducts(token, { page: 1, limit: 8, search, categoryId: productCategoryId, sort: productSort }); setProducts(result);
         } catch (saveError) { setError(saveError.message); }
     };
 
@@ -206,7 +214,7 @@ function AdminDashboard() {
     };
     const archive = async (type, id) => {
         if (!window.confirm("Ẩn mục này khỏi hệ thống?")) return;
-        try { if (type === "product") await deleteProduct(token, id); else await deleteCategory(token, id); setPage(1); if (type === "product") setProducts(await getAdminProducts(token, { page: 1, limit: 8, search })); else setCategories((await getAdminCategories(token)).data || []); } catch (deleteError) { setError(deleteError.message); }
+        try { if (type === "product") await deleteProduct(token, id); else await deleteCategory(token, id); setPage(1); if (type === "product") setProducts(await getAdminProducts(token, { page: 1, limit: 8, search, categoryId: productCategoryId, sort: productSort })); else setCategories((await getAdminCategories(token)).data || []); } catch (deleteError) { setError(deleteError.message); }
     };
 
     return (
@@ -229,7 +237,7 @@ function AdminDashboard() {
                         {section === "overview" && <Overview stats={stats} onNavigate={changeSection} />}
                         {section === "orders" && <AdminOrders onOrderChanged={() => setStatsRefreshKey((value) => value + 1)} />}
                         {section === "categories" && <Categories categories={categories} onAdd={() => openCategory()} onEdit={openCategory} onDelete={(id) => archive("category", id)} />}
-                        {section === "products" && <Products products={products} categories={categories} search={search} setSearch={setSearch} page={page} setPage={setPage} onAdd={() => openProduct()} onEdit={openProduct} onDelete={(id) => archive("product", id)} />}
+                        {section === "products" && <Products products={products} categories={categories} search={search} setSearch={setSearch} page={page} setPage={setPage} categoryId={productCategoryId} setCategoryId={setProductCategoryId} sort={productSort} setSort={setProductSort} onAdd={() => openProduct()} onEdit={openProduct} onDelete={(id) => archive("product", id)} />}
                         {section === "users" && <Users users={users} search={search} setSearch={setSearch} page={page} setPage={setPage} onView={openUser} onRole={async (id, role) => { await updateUserRole(token, id, role); setUsers(await getAdminUsers(token, { page, limit: 8, search })); }} onStatus={toggleUserStatus} />}
                     </>
                 )}
@@ -602,7 +610,57 @@ function EmptyRow({ colSpan }) { return <tr><td className="empty-row" colSpan={c
 function Pagination({ pagination, page, setPage }) { const total = pagination?.totalPages || 1; return <div className="pagination"><span>Trang {page} / {total}</span><div><button disabled={page <= 1} onClick={() => setPage(page - 1)}>←</button><button disabled={page >= total} onClick={() => setPage(page + 1)}>→</button></div></div>; }
 
 function Categories({ categories, onAdd, onEdit, onDelete }) { return <section className="admin-content"><Toolbar title="Danh mục sản phẩm" count={categories.length} onAdd={onAdd} addLabel="Thêm danh mục" /><div className="panel table-panel"><table><thead><tr><th>Mã danh mục</th><th>Tên danh mục</th><th>Sản phẩm</th><th>Trạng thái</th><th /></tr></thead><tbody>{categories.length ? categories.map((item) => <tr key={item.category_id}><td><code>{item.category_id}</code></td><td><strong>{item.category_name}</strong></td><td>{item.product_count}</td><td><span className={`status ${item.status === "hidden" ? "blocked" : "active"}`}>{item.status === "hidden" ? "Đã ẩn" : "Đang hiển thị"}</span></td><td className="row-actions"><button onClick={() => onEdit(item)}>Sửa</button><button className="danger-text" onClick={() => onDelete(item.category_id)}>Ẩn</button></td></tr>) : <EmptyRow colSpan="5" />}</tbody></table></div></section>; }
-function Products({ products, categories, search, setSearch, page, setPage, onAdd, onEdit, onDelete }) { return <section className="admin-content"><Toolbar title="Kho sản phẩm" count={products.pagination?.total || 0} onAdd={onAdd} addLabel="Thêm sản phẩm"><SearchBar value={search} onChange={(value) => { setSearch(value); setPage(1); }} placeholder="Tìm theo tên sản phẩm..." /></Toolbar><div className="panel table-panel"><table><thead><tr><th>Sản phẩm</th><th>Danh mục</th><th>Giá bán</th><th>Đánh giá</th><th>Kho</th><th>Trạng thái</th><th /></tr></thead><tbody>{products.data?.length ? products.data.map((item) => <tr key={item.id}><td><div className="product-cell">{item.image ? <img src={item.image} alt="" /> : <span className="image-placeholder">N</span>}<div><strong>{item.title}</strong><code>{item.id}</code></div></div></td><td>{item.category_name || "--"}</td><td><strong>{money(item.final_price)}</strong></td><td>★ {Number(item.rating || 0).toFixed(1)}</td><td>{item.stock ?? "--"}</td><td><span className="status active">Đang bán</span></td><td className="row-actions"><button onClick={() => onEdit(item)}>Sửa</button><button className="danger-text" onClick={() => onDelete(item.id)}>Ẩn</button></td></tr>) : <EmptyRow colSpan="7" />}</tbody></table><Pagination pagination={products.pagination} page={page} setPage={setPage} /></div></section>; }
+/** Các kiểu sắp xếp cho kho sản phẩm. Giá trị khớp với hằng SORTS bên backend. */
+const SAP_XEP_SP = [
+    { value: "", label: "Mặc định (đánh giá cao trước)" },
+    { value: "gia_tang", label: "Giá: thấp → cao" },
+    { value: "gia_giam", label: "Giá: cao → thấp" },
+    { value: "sao_tang", label: "Đánh giá: thấp → cao" },
+    { value: "sao_giam", label: "Đánh giá: cao → thấp" },
+];
+
+function Products({ products, categories, search, setSearch, page, setPage, categoryId, setCategoryId, sort, setSort, onAdd, onEdit, onDelete }) {
+    // Đổi bộ lọc thì quay về trang 1 — không thì dễ rơi vào trang trống
+    const doiLoc = (dat) => (giaTri) => { dat(giaTri); setPage(1); };
+
+    return <section className="admin-content"><Toolbar title="Kho sản phẩm" count={products.pagination?.total || 0} onAdd={onAdd} addLabel="Thêm sản phẩm">
+        <SearchBar value={search} onChange={doiLoc(setSearch)} placeholder="Tìm theo tên sản phẩm..." />
+
+        <select
+            className="inline-select"
+            value={categoryId}
+            onChange={(e) => doiLoc(setCategoryId)(e.target.value)}
+            title="Lọc theo danh mục"
+        >
+            <option value="">Tất cả danh mục</option>
+            {categories.map((c) => (
+                <option key={c.category_id} value={c.category_id}>
+                    {c.category_name} ({c.product_count})
+                </option>
+            ))}
+        </select>
+
+        <select
+            className="inline-select"
+            value={sort}
+            onChange={(e) => doiLoc(setSort)(e.target.value)}
+            title="Sắp xếp"
+        >
+            {SAP_XEP_SP.map((s) => (
+                <option key={s.value} value={s.value}>{s.value ? `Sắp xếp: ${s.label}` : s.label}</option>
+            ))}
+        </select>
+
+        {(categoryId || sort) && (
+            <button
+                className="icon-button"
+                title="Bỏ lọc và sắp xếp"
+                onClick={() => { setCategoryId(""); setSort(""); setPage(1); }}
+            >
+                ✕
+            </button>
+        )}
+    </Toolbar><div className="panel table-panel"><table><thead><tr><th>Sản phẩm</th><th>Danh mục</th><th>Giá bán</th><th>Đánh giá</th><th>Kho</th><th>Trạng thái</th><th /></tr></thead><tbody>{products.data?.length ? products.data.map((item) => <tr key={item.id}><td><div className="product-cell">{item.image ? <img src={item.image} alt="" /> : <span className="image-placeholder">N</span>}<div><strong>{item.title}</strong><code>{item.id}</code></div></div></td><td>{item.category_name || "--"}</td><td><strong>{money(item.final_price)}</strong></td><td>★ {Number(item.rating || 0).toFixed(1)}</td><td>{item.stock ?? "--"}</td><td><span className="status active">Đang bán</span></td><td className="row-actions"><button onClick={() => onEdit(item)}>Sửa</button><button className="danger-text" onClick={() => onDelete(item.id)}>Ẩn</button></td></tr>) : <EmptyRow colSpan="7" />}</tbody></table><Pagination pagination={products.pagination} page={page} setPage={setPage} /></div></section>; }
 function Users({ users, search, setSearch, page, setPage, onView, onRole, onStatus }) { return <section className="admin-content"><Toolbar title="Người dùng" count={users.pagination?.total || 0} onAdd={() => {}} addLabel=""><SearchBar value={search} onChange={(value) => { setSearch(value); setPage(1); }} placeholder="Tìm tên, email hoặc mã khách..." /></Toolbar><div className="panel table-panel"><table><thead><tr><th>Người dùng</th><th>Vai trò</th><th>Trạng thái</th><th>Lượt mua</th><th>Ngày tạo</th><th /></tr></thead><tbody>{users.data?.length ? users.data.map((item) => <tr key={item.customer_id}><td><div className="user-cell"><span className="activity-avatar">{(item.customer_name || "K").slice(0, 1)}</span><div><strong>{item.customer_name || "Khách hàng nền"}</strong><span>{item.email || item.customer_id}</span></div></div></td><td><select className="inline-select" value={item.role} onChange={(event) => onRole(item.customer_id, event.target.value)}><option value="user">User</option><option value="admin">Admin</option></select></td><td><div className="user-status-cell"><span className={`status ${item.status === "blocked" ? "blocked" : "active"}`}>{item.status === "blocked" ? "Đã khóa" : "Hoạt động"}</span><button className="icon-button" title={item.status === "blocked" ? "Mở khóa tài khoản" : "Khóa tài khoản"} onClick={() => onStatus(item.customer_id, item.status)} aria-label={item.status === "blocked" ? "Mở khóa tài khoản" : "Khóa tài khoản"}>{item.status === "blocked" ? "🔓" : "🔒"}</button></div></td><td>{item.bought_count || 0}</td><td>{dateText(item.created_at)}</td><td className="row-actions"><button onClick={() => onView(item)}>Chi tiết</button></td></tr>) : <EmptyRow colSpan="6" />}</tbody></table><Pagination pagination={users.pagination} page={page} setPage={setPage} /></div></section>; }
 
 function Modal({ title, children, onClose }) { return <div className="modal-backdrop" onMouseDown={onClose}><div className="admin-modal" onMouseDown={(event) => event.stopPropagation()}><div className="modal-heading"><h3>{title}</h3><button onClick={onClose}>×</button></div>{children}</div></div>; }

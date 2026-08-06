@@ -3,7 +3,13 @@ import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
 import { useAuth } from "../context/AuthContext";
 import { useCart } from "../context/CartContext";
-import { createOrder, createOrderBuyNow, getMyProfile, formatPrice } from "../services/shopService";
+import {
+    createOrder,
+    createOrderBuyNow,
+    getMyProfile,
+    getPaymentMethods,
+    formatPrice,
+} from "../services/shopService";
 import { getProductById } from "../services/productService";
 
 /**
@@ -24,6 +30,27 @@ import { getProductById } from "../services/productService";
  * thấy nhầm món cũ. Để trên đường dẫn thì F5 vẫn đúng và vào từ giỏ cũng đúng.
  */
 const SL_TOI_DA = 99;
+
+/**
+ * Danh sách dựng sẵn để trang hiện được ngay, không phải chờ gọi API.
+ * Máy chủ trả về danh sách thật (kèm cờ `available`) rồi ghi đè lên.
+ */
+const MAC_DINH_PHUONG_THUC = [
+    {
+        value: "COD",
+        label: "Tiền mặt tại cửa hàng",
+        description: "Mang mã đơn tới cửa hàng trả tiền, nhân viên xác nhận giúp bạn.",
+        icon: "💵",
+        available: true,
+    },
+    {
+        value: "BANK_QR",
+        label: "Chuyển khoản quét mã QR",
+        description: "Quét mã bằng app ngân hàng. Hệ thống tự xác nhận ngay khi nhận được tiền.",
+        icon: "📱",
+        available: true,
+    },
+];
 
 function Checkout() {
     const { user, customer } = useAuth();
@@ -50,6 +77,11 @@ function Checkout() {
     const [form, setForm] = useState({ receiverName: "", phone: "", address: "", note: "" });
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState("");
+
+    // Cách thanh toán. Mặc định trả tiền mặt vì đó là cách luôn dùng được —
+    // chuyển khoản còn phụ thuộc cửa hàng đã khai báo tài khoản nhận tiền chưa.
+    const [phuongThuc, setPhuongThuc] = useState("COD");
+    const [phuongThucList, setPhuongThucList] = useState(MAC_DINH_PHUONG_THUC);
 
     // Đặt hàng xong thì backend dọn sạch giỏ. Nếu không có cờ này, effect
     // "giỏ rỗng → quay về /cart" bên dưới sẽ chạy đè lên lệnh chuyển sang
@@ -81,6 +113,37 @@ function Checkout() {
             cancelled = true;
         };
     }, [user, customer]);
+
+    // Hỏi máy chủ xem cửa hàng đang bật những cách trả tiền nào
+    useEffect(() => {
+        let huy = false;
+
+        (async () => {
+            try {
+                const token = await user.getIdToken();
+                const { data } = await getPaymentMethods(token);
+                if (huy || !Array.isArray(data)) return;
+
+                setPhuongThucList(data);
+
+                // Đang chọn cách vừa bị tắt thì kéo về cách còn dùng được,
+                // không thì khách bấm đặt hàng sẽ bị máy chủ từ chối.
+                const dangChon = data.find((p) => p.value === phuongThuc);
+                if (dangChon && !dangChon.available) {
+                    setPhuongThuc(data.find((p) => p.available)?.value ?? "COD");
+                }
+            } catch (err) {
+                // Không hỏi được thì dùng danh sách dựng sẵn, trang vẫn đặt hàng được
+                console.error("[Checkout] Không tải được cách thanh toán:", err.message);
+            }
+        })();
+
+        return () => {
+            huy = true;
+        };
+        // Cố ý không phụ thuộc `phuongThuc`: chỉ cần hỏi một lần lúc mở trang
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user]);
 
     // Tải lại thông tin món "mua ngay" khi state bị mất (khách F5 trang này)
     useEffect(() => {
@@ -166,13 +229,14 @@ function Checkout() {
                 const { data } = await createOrderBuyNow(token, {
                     productId: muaNgayId,
                     quantity: muaNgaySl,
+                    paymentMethod: phuongThuc,
                     ...form,
                 });
                 navigate(`/orders/${data.order_id}`, { replace: true });
                 return;
             }
 
-            const { data } = await createOrder(token, form);
+            const { data } = await createOrder(token, { ...form, paymentMethod: phuongThuc });
 
             setPlaced(true); // chặn effect "giỏ rỗng → /cart" trước khi dọn giỏ
             await refreshCart(); // backend đã xoá giỏ, đồng bộ lại badge trên Header
@@ -231,13 +295,66 @@ function Checkout() {
                         style={{ ...inputStyle, resize: "vertical" }}
                     />
 
+                    <h3 style={{ marginTop: "26px", marginBottom: "10px" }}>Cách thanh toán</h3>
+
+                    <div style={styleDsPhuongThuc}>
+                        {phuongThucList.map((pt) => {
+                            const dangChon = phuongThuc === pt.value;
+                            const khoa = !pt.available;
+
+                            return (
+                                <label
+                                    key={pt.value}
+                                    style={{
+                                        ...styleThePhuongThuc,
+                                        ...(dangChon ? styleThePhuongThucChon : {}),
+                                        ...(khoa ? styleThePhuongThucKhoa : {}),
+                                    }}
+                                >
+                                    <input
+                                        type="radio"
+                                        name="phuongThuc"
+                                        value={pt.value}
+                                        checked={dangChon}
+                                        disabled={khoa}
+                                        onChange={() => setPhuongThuc(pt.value)}
+                                        style={{ marginTop: "3px" }}
+                                    />
+                                    <span style={{ fontSize: "22px", lineHeight: 1 }}>{pt.icon}</span>
+                                    <span style={{ flex: 1, minWidth: 0 }}>
+                                        <strong style={{ display: "block", color: khoa ? "#9aa5b4" : "#1f2d3d" }}>
+                                            {pt.label}
+                                        </strong>
+                                        <span style={{ fontSize: "13px", color: "#6b7a90", lineHeight: 1.5 }}>
+                                            {pt.description}
+                                        </span>
+                                    </span>
+                                </label>
+                            );
+                        })}
+                    </div>
+
+                    {/* Nhắc trước điều gì sẽ xảy ra sau khi bấm đặt hàng */}
                     <div style={noticeStyle}>
-                        <strong>💵 Thanh toán tại cửa hàng</strong>
-                        <p style={{ margin: "8px 0 0", color: "#666", fontSize: "14px" }}>
-                            Sau khi đặt, bạn sẽ nhận được <strong>mã đơn hàng</strong>. Mang mã này tới
-                            cửa hàng để thanh toán. Nhân viên xác nhận xong, đơn sẽ chuyển sang trạng
-                            thái <strong>Đã thanh toán</strong>.
-                        </p>
+                        {phuongThuc === "BANK_QR" ? (
+                            <>
+                                <strong>📱 Bước tiếp theo: quét mã QR</strong>
+                                <p style={{ margin: "8px 0 0", color: "#666", fontSize: "14px" }}>
+                                    Đặt xong sẽ hiện <strong>mã QR</strong> có sẵn số tiền và nội dung. Bạn quét
+                                    bằng app ngân hàng, chuyển xong thì đơn <strong>tự chuyển sang Đã thanh
+                                    toán</strong> trong vài giây — không cần chờ nhân viên duyệt.
+                                </p>
+                            </>
+                        ) : (
+                            <>
+                                <strong>💵 Thanh toán tại cửa hàng</strong>
+                                <p style={{ margin: "8px 0 0", color: "#666", fontSize: "14px" }}>
+                                    Sau khi đặt, bạn sẽ nhận được <strong>mã đơn hàng</strong>. Mang mã này tới
+                                    cửa hàng để thanh toán. Nhân viên xác nhận xong, đơn sẽ chuyển sang trạng
+                                    thái <strong>Đã thanh toán</strong>.
+                                </p>
+                            </>
+                        )}
                     </div>
 
                     <button
@@ -307,6 +424,24 @@ const errorStyle = {
     borderRadius: "6px",
     margin: "0 0 12px",
 };
+
+const styleDsPhuongThuc = { display: "flex", flexDirection: "column", gap: "10px" };
+
+const styleThePhuongThuc = {
+    display: "flex",
+    alignItems: "flex-start",
+    gap: "12px",
+    padding: "14px",
+    border: "1px solid #d5dce6",
+    borderRadius: "10px",
+    cursor: "pointer",
+    background: "white",
+    transition: "border-color .15s, background .15s",
+};
+
+const styleThePhuongThucChon = { border: "2px solid #1976d2", background: "#f2f8fe", padding: "13px" };
+
+const styleThePhuongThucKhoa = { background: "#f6f7f9", cursor: "not-allowed", borderStyle: "dashed" };
 
 const muaNgayNoteStyle = {
     marginTop: "10px",

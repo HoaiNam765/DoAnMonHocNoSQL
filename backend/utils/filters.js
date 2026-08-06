@@ -3,8 +3,13 @@
  * Gom vào một chỗ để danh sách sản phẩm, gợi ý và bán chạy dùng chung một cách hiểu.
  */
 
-/** Các kiểu sắp xếp được chấp nhận. Giá trị lạ thì coi như sắp xếp mặc định. */
-const SORTS = ['gia_tang', 'gia_giam'];
+/**
+ * Các kiểu sắp xếp được chấp nhận. Giá trị lạ thì coi như sắp xếp mặc định.
+ *
+ *   gia_tang / gia_giam — theo giá bán
+ *   sao_tang / sao_giam — theo điểm đánh giá
+ */
+const SORTS = ['gia_tang', 'gia_giam', 'sao_tang', 'sao_giam'];
 
 /**
  * Đọc bộ lọc danh mục + khoảng giá + kiểu sắp xếp.

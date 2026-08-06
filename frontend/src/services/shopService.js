@@ -79,6 +79,9 @@ export const createOrderBuyNow = (token, { productId, quantity, ...info }) =>
         body: JSON.stringify({ productId, quantity, ...info }),
     });
 
+/** Các cách trả tiền cửa hàng đang bật, kèm cờ `available`. */
+export const getPaymentMethods = (token) => authFetch("/orders/payment-methods", token);
+
 /** Thông tin chuyển khoản (ảnh QR, số tài khoản, nội dung) cho đơn đang chờ trả tiền. */
 export const getPaymentQr = (token, orderId) =>
     authFetch(`/orders/${orderId}/payment-qr`, token);

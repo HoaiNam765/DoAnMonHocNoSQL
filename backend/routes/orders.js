@@ -16,6 +16,37 @@ router.use(verifyToken);
 const customerIdOf = (req) => `U_${req.user.uid}`;
 
 /**
+ * Các phương thức thanh toán được chấp nhận.
+ *
+ *  COD      — trả tiền mặt tại cửa hàng, nhân viên bấm xác nhận trên trang quản trị
+ *  BANK_QR  — quét mã QR chuyển khoản, SePay báo về thì hệ thống tự xác nhận
+ *  ZALOPAY  — giữ lại cho dữ liệu cũ, khách tự bấm xác nhận đã trả
+ *
+ * Dữ liệu cũ còn giá trị AT_STORE (trước khi đổi nghiệp vụ). Không nhận thêm
+ * giá trị đó cho đơn mới, nhưng đơn cũ vẫn đọc và hiển thị bình thường.
+ */
+const PHUONG_THUC_HOP_LE = ['COD', 'BANK_QR', 'ZALOPAY'];
+
+/**
+ * Đọc và kiểm tra phương thức thanh toán từ body.
+ * Chọn chuyển khoản mà cửa hàng chưa khai báo tài khoản nhận tiền thì chặn
+ * ngay — để đơn tạo xong mới phát hiện không có QR thì khách kẹt giữa chừng.
+ */
+const docPhuongThuc = (giaTri) => {
+  const pt = String(giaTri || 'COD').toUpperCase();
+
+  if (!PHUONG_THUC_HOP_LE.includes(pt)) {
+    throw new HttpError(400, `Phương thức thanh toán không hợp lệ (chỉ nhận: ${PHUONG_THUC_HOP_LE.join(', ')})`);
+  }
+
+  if (pt === 'BANK_QR' && !daCauHinh()) {
+    throw new HttpError(400, 'Cửa hàng chưa bật thanh toán chuyển khoản, bạn chọn cách khác giúp nhé');
+  }
+
+  return pt;
+};
+
+/**
  * POST /api/orders — đặt hàng từ giỏ
  *
  * Body: { receiverName, phone, address, note? }
@@ -49,10 +80,7 @@ router.post(
       throw new HttpError(409, `Không đủ hàng: ${detail}`);
     }
 
-    const normalizedPaymentMethod = String(paymentMethod || 'COD').toUpperCase();
-    if (!['COD', 'ZALOPAY'].includes(normalizedPaymentMethod)) {
-      throw new HttpError(400, 'Phương thức thanh toán không hợp lệ');
-    }
+    const normalizedPaymentMethod = docPhuongThuc(paymentMethod);
 
     const rows = await writeQuery(q.ORDER_CREATE_FROM_CART, {
       customerId,
@@ -119,10 +147,7 @@ router.post(
       throw new HttpError(400, `Số lượng phải là số nguyên từ 1 đến ${SO_LUONG_TOI_DA}`);
     }
 
-    const normalizedPaymentMethod = String(paymentMethod || 'COD').toUpperCase();
-    if (!['COD', 'ZALOPAY'].includes(normalizedPaymentMethod)) {
-      throw new HttpError(400, 'Phương thức thanh toán không hợp lệ');
-    }
+    const normalizedPaymentMethod = docPhuongThuc(paymentMethod);
 
     // Sản phẩm có tồn tại không + còn đủ hàng không.
     //
@@ -166,6 +191,39 @@ router.post(
 );
 
 /**
+ * GET /api/orders/payment-methods
+ * Danh sách cách trả tiền đang bật, để trang đặt hàng khỏi hiện lựa chọn chết.
+ *
+ * PHẢI khai báo TRƯỚC `/:orderId` — không thì Express hiểu "payment-methods"
+ * là một mã đơn hàng và trả 404.
+ */
+router.get(
+  '/payment-methods',
+  asyncHandler(async (req, res) => {
+    res.json({
+      data: [
+        {
+          value: 'COD',
+          label: 'Tiền mặt tại cửa hàng',
+          description: 'Mang mã đơn tới cửa hàng trả tiền, nhân viên xác nhận giúp bạn.',
+          icon: '💵',
+          available: true,
+        },
+        {
+          value: 'BANK_QR',
+          label: 'Chuyển khoản quét mã QR',
+          description: daCauHinh()
+            ? 'Quét mã bằng app ngân hàng. Hệ thống tự xác nhận ngay khi nhận được tiền.'
+            : 'Cửa hàng chưa bật cách thanh toán này.',
+          icon: '📱',
+          available: daCauHinh(),
+        },
+      ],
+    });
+  })
+);
+
+/**
  * GET /api/orders/:orderId/payment-qr
  * Thông tin để khách chuyển khoản: ảnh QR, số tài khoản, nội dung, số tiền.
  *
@@ -184,6 +242,14 @@ router.get(
     }
     if (don.status !== 'PENDING') {
       throw new HttpError(400, `Đơn đang ở trạng thái ${don.status}, không cần thanh toán nữa`);
+    }
+
+    // Khách chọn trả tiền mặt thì không hiện mã QR — họ ra cửa hàng trả và chờ
+    // nhân viên xác nhận, đúng như đã chọn lúc đặt hàng.
+    if (don.payment_method !== 'BANK_QR') {
+      return res.json({
+        data: { available: false, reason: 'Đơn này chọn trả tiền mặt tại cửa hàng' },
+      });
     }
 
     if (!daCauHinh()) {

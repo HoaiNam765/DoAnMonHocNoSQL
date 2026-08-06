@@ -36,6 +36,8 @@ RETURN p.id            AS id,
 ORDER BY
   CASE WHEN $sort = 'gia_tang' THEN p.final_price END ASC,
   CASE WHEN $sort = 'gia_giam' THEN p.final_price END DESC,
+  CASE WHEN $sort = 'sao_tang' THEN coalesce(p.rating, 0) END ASC,
+  CASE WHEN $sort = 'sao_giam' THEN coalesce(p.rating, 0) END DESC,
   coalesce(p.rating, 0) DESC,
   p.id ASC
 SKIP $skip LIMIT $limit

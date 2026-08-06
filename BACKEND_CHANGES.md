@@ -629,3 +629,104 @@ trước khi có SePay) nên đã bỏ khỏi file mẫu mới: `BANK_ID`, `BANK
 
 Cũng sửa `.gitignore`: thêm `!.env.example` để file mẫu **được commit** cho
 người trong nhóm — trước đó `backend/.env.example` bị chặn nhầm.
+
+## 14. Chọn phương thức thanh toán lúc đặt hàng
+
+**Endpoint mới:** `GET /api/orders/payment-methods`
+**Sửa:** `routes/orders.js` (thêm `docPhuongThuc()`, hằng `PHUONG_THUC_HOP_LE`),
+`queries/shopCypher.js` (`ORDER_FIND_FOR_PAYMENT` trả thêm `payment_method`)
+
+### Ba giá trị được chấp nhận
+
+| Giá trị | Nghĩa |
+|---|---|
+| `COD` | Trả tiền mặt tại cửa hàng, nhân viên bấm xác nhận (mặc định) |
+| `BANK_QR` | Quét mã QR chuyển khoản, SePay báo về thì hệ thống tự xác nhận |
+| `ZALOPAY` | Giữ cho dữ liệu cũ |
+
+Dữ liệu cũ còn giá trị `AT_STORE` — không nhận cho đơn mới nhưng đơn cũ vẫn đọc
+và hiển thị bình thường (được coi như trả tiền mặt).
+
+### Chặn sớm thay vì để khách kẹt
+
+`docPhuongThuc()` từ chối ngay `BANK_QR` khi cửa hàng chưa khai báo tài khoản
+nhận tiền (`daCauHinh()` = false). Không chặn ở đây thì đơn tạo xong khách mới
+phát hiện không có QR để quét, mà đơn thì đã nằm đó.
+
+Endpoint `GET /api/orders/payment-methods` trả kèm cờ `available` để trang đặt
+hàng khoá sẵn lựa chọn không dùng được, khỏi hiện ra rồi báo lỗi.
+
+### Ràng buộc ở endpoint QR
+
+`GET /api/orders/:orderId/payment-qr` nay trả `available: false` cho đơn không
+phải `BANK_QR`. Khách chọn tiền mặt thì không thấy mã QR — đúng như đã chọn.
+
+**Webhook cố ý KHÔNG kiểm phương thức:** nếu tiền thật sự về tài khoản kèm mã
+đơn, hệ thống vẫn xác nhận đã thanh toán dù đơn đó chọn tiền mặt. Tiền đã vào
+thì không có lý do từ chối.
+
+### Bài học về kiểm thử
+
+Thay đổi này làm `test:sepay` tụt từ 27 xuống 25 phép kiểm mà **vẫn xanh** —
+vì script tạo đơn không nêu phương thức nên rơi vào mặc định COD, khiến nhánh
+kiểm mã QR bị bỏ qua lặng lẽ. Đã sửa script tạo đơn `BANK_QR` và thêm hai phép
+kiểm cho đơn tiền mặt: nay 29 phép kiểm.
+
+Số phép kiểm giảm mà bộ test vẫn báo xanh là dấu hiệu mất độ phủ, không phải
+tin tốt — nên đối chiếu con số này mỗi lần đổi nghiệp vụ.
+
+---
+
+## 15. Lọc + sắp xếp cho kho sản phẩm bên admin
+
+Trang quản trị trước đây chỉ tìm được theo tên. Danh mục có 30 mục, sản phẩm
+trải nhiều trang, nên muốn xem "hàng nào rẻ nhất", "hàng nào bị chê" hay "danh
+mục này còn gì" đều phải lật từng trang mà đọc.
+
+### Dùng lại đúng câu truy vấn của trang khách
+
+`GET /api/admin/products` nay nhận thêm `categoryId` và `sort`, đọc qua
+`utils/filters.js › parseFilters()` — cùng một hàm mà trang sản phẩm, gợi ý và
+bán chạy đang dùng. Không viết bộ đọc tham số thứ hai: giá trị hợp lệ, cách xử
+lý giá trị rác và tên kiểu sắp xếp đều thống nhất giữa hai phía.
+
+### Thêm sắp xếp theo điểm đánh giá
+
+`SORTS` trong `utils/filters.js` mở rộng từ hai lên bốn giá trị:
+
+    gia_tang / gia_giam   — theo giá bán
+    sao_tang / sao_giam   — theo điểm đánh giá   (mới)
+
+`LIST_PRODUCTS` trong `queries/cypher.js` thêm hai nhánh vào mệnh đề `ORDER BY`:
+
+```cypher
+ORDER BY
+  CASE WHEN $sort = 'gia_tang' THEN p.final_price END ASC,
+  CASE WHEN $sort = 'gia_giam' THEN p.final_price END DESC,
+  CASE WHEN $sort = 'sao_tang' THEN coalesce(p.rating, 0) END ASC,
+  CASE WHEN $sort = 'sao_giam' THEN coalesce(p.rating, 0) END DESC,
+  coalesce(p.rating, 0) DESC,
+  p.id ASC
+```
+
+Ba điểm cần giữ nguyên khi sửa về sau:
+
+- **`CASE WHEN` chứ không nối chuỗi.** Cypher không cho truyền tên cột làm tham
+  số; ghép chuỗi vào câu truy vấn là mở đường cho Cypher injection.
+- **`coalesce(p.rating, 0)`.** Sản phẩm chưa ai đánh giá không có khoá `rating`.
+  Không có `coalesce` thì `null` bị xếp riêng và thứ tự tăng/giảm lệch nhau.
+- **`p.id ASC` chốt cuối.** Nhiều sản phẩm cùng 4.8 sao; thiếu tiêu chí phụ này
+  thì `SKIP/LIMIT` có thể trả trùng dòng hoặc bỏ sót dòng khi lật trang.
+
+Vì thêm giá trị vào `SORTS` là dùng chung, bốn kiểu sắp xếp này đồng thời có
+hiệu lực ở phía khách hàng — cùng một tham số `sort`.
+
+### Kiểm chứng
+
+Script kiểm riêng chạy 10 phép, đạt cả 10: bốn kiểu sắp xếp, lọc theo danh mục
+(đúng danh mục + đúng tổng số), kết hợp lọc với sắp xếp, và hai trường hợp biên
+(`sort` bịa ra → dùng mặc định chứ không lỗi; `categoryId` không tồn tại → trả
+0 sản phẩm chứ không lỗi).
+
+Hồi quy đầy đủ sau thay đổi: api 34, shop 41, admin 38, sepay 29, attrs 22,
+events 20, buynow 19 — 203 phép kiểm, 0 hỏng.

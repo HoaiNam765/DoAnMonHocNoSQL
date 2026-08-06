@@ -61,12 +61,16 @@ export async function deleteCategory(token, id) {
 }
 
 // 3. Sản phẩm
-export async function getAdminProducts(token, { page = 1, limit = 10, search = "", categoryId = "" } = {}) {
+export async function getAdminProducts(
+    token,
+    { page = 1, limit = 10, search = "", categoryId = "", sort = "" } = {}
+) {
     const query = new URLSearchParams({
         page,
         limit,
         search,
         ...(categoryId ? { categoryId } : {}),
+        ...(sort ? { sort } : {}),
     }).toString();
 
     return request(`/products?${query}`, token);

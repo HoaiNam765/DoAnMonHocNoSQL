@@ -201,10 +201,11 @@ RETURN t.tx_id AS tx_id, o.order_id AS order_id
 /** Đơn hàng kèm chủ đơn — dùng khi đối chiếu tiền chuyển khoản với đơn. */
 const ORDER_FIND_FOR_PAYMENT = `
 MATCH (c:Customer)-[:PLACED]->(o:Order {order_id: $orderId})
-RETURN o.order_id AS order_id,
-       o.status   AS status,
-       o.total    AS total,
-       c.customer_id AS customer_id
+RETURN o.order_id       AS order_id,
+       o.status         AS status,
+       o.total          AS total,
+       o.payment_method AS payment_method,
+       c.customer_id    AS customer_id
 `;
 
 /** Danh sách đơn của 1 khách (trang "Đơn hàng của tôi"). */

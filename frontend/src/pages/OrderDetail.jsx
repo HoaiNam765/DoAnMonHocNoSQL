@@ -97,6 +97,7 @@ function OrderDetail() {
 
     const info = statusInfo(order.status);
     const isPending = order.status === "PENDING";
+    const laChuyenKhoan = order.payment_method === "BANK_QR";
 
     return (
         <>
@@ -114,8 +115,9 @@ function OrderDetail() {
                 {order.paid_at && ` · Đã thanh toán ${formatDate(order.paid_at)}`}
             </p>
 
-            {/* Hướng dẫn thanh toán — chỉ hiện khi đơn còn chờ */}
-            {isPending && (
+            {/* Hướng dẫn trả tiền mặt — chỉ hiện khi đơn còn chờ VÀ khách đã chọn
+                cách này lúc đặt hàng. Đơn cũ (COD, AT_STORE) cũng rơi vào đây. */}
+            {isPending && !laChuyenKhoan && (
                 <div style={payBoxStyle}>
                     <div style={{ fontSize: "36px" }}>💵</div>
                     <div style={{ flex: 1, minWidth: "260px" }}>
@@ -134,8 +136,9 @@ function OrderDetail() {
                 </div>
             )}
 
-            {/* Chuyển khoản qua QR — tự ẩn nếu cửa hàng chưa bật */}
-            {isPending && <PaymentQr user={user} orderId={order.order_id} />}
+            {/* Mã QR — chỉ cho đơn đã chọn chuyển khoản. Component còn tự ẩn thêm
+                một lần nữa nếu cửa hàng chưa khai báo tài khoản nhận tiền. */}
+            {isPending && laChuyenKhoan && <PaymentQr user={user} orderId={order.order_id} />}
 
             {/* Danh sách sản phẩm */}
             <h3 style={{ marginTop: "30px" }}>Sản phẩm</h3>

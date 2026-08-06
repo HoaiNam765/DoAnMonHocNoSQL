@@ -326,3 +326,53 @@ việc chuyển tiền rồi ngồi xem.
 
 Chưa khai báo tài khoản nhận tiền thì khung **tự ẩn**, web chạy bình thường với
 cách trả tiền tại quầy — xem `SEPAY_SETUP.md`.
+
+## Chọn phương thức thanh toán
+
+`pages/Checkout.jsx` thêm mục **"Cách thanh toán"** với hai thẻ chọn: tiền mặt
+tại cửa hàng (mặc định) và chuyển khoản quét mã QR. Khối nhắc bên dưới đổi nội
+dung theo lựa chọn để khách biết trước bước tiếp theo.
+
+Danh sách lấy từ `GET /api/orders/payment-methods` (`shopService.js ›
+getPaymentMethods()`), có sẵn bản dựng trước trong hằng `MAC_DINH_PHUONG_THUC`
+để trang hiện ngay không phải chờ API. Lựa chọn nào cửa hàng chưa bật thì hiện
+mờ và không bấm được; nếu đang chọn đúng cái vừa bị tắt thì tự kéo về cách còn
+dùng được.
+
+`pages/OrderDetail.jsx` dùng cờ `laChuyenKhoan = order.payment_method === "BANK_QR"`
+để hiện **đúng một** trong hai khối: khung QR, hoặc hướng dẫn mang mã đơn ra
+cửa hàng. Đơn cũ (`COD`, `AT_STORE`) rơi vào nhánh tiền mặt.
+
+## Lọc và sắp xếp kho sản phẩm bên admin
+
+`pages/admin/AdminDashboard.jsx` — thanh công cụ mục **Sản phẩm** thêm hai ô
+chọn cạnh ô tìm kiếm:
+
+- **Danh mục** — liệt kê đủ 30 danh mục kèm số sản phẩm sẵn có, ví dụ
+  `Bột pha (31)`. Con số này lấy từ danh sách danh mục đã tải cho mục
+  "Danh mục", không phải gọi thêm API.
+- **Sắp xếp** — mặc định (đánh giá cao trước), giá thấp→cao, giá cao→thấp,
+  đánh giá thấp→cao, đánh giá cao→thấp. Giá trị khớp hằng `SORTS` bên backend.
+
+Nút `✕` chỉ hiện khi đang có lọc hoặc sắp xếp, bấm một cái là về mặc định.
+
+### Ba chi tiết dễ sai nếu làm lại
+
+**Đổi bộ lọc phải về trang 1.** Hàm bọc `doiLoc()` gọi `setPage(1)` kèm mỗi lần
+đổi. Đang ở trang 5 mà lọc xuống còn 31 sản phẩm thì trang 5 trống trơn, trông
+như mất dữ liệu.
+
+**Lưu/xoá xong phải giữ nguyên bộ lọc.** Hai lời gọi tải lại sau khi lưu và sau
+khi xoá đều truyền kèm `categoryId` và `sort` đang chọn. Thiếu chỗ này thì sửa
+xong một sản phẩm là danh sách nhảy về mặc định, admin phải chọn lại từ đầu.
+
+**Lọc chạy trên server, không phải trên trang.** `services/adminService.js ›
+getAdminProducts()` đẩy `categoryId`/`sort` lên query string và chỉ ghi khoá khi
+có giá trị. Lọc ở phía trình duyệt thì chỉ lọc được 10 dòng của trang hiện tại,
+vô nghĩa với kho vài trăm sản phẩm.
+
+### Đã xác nhận trên trình duyệt
+
+Chọn "Đánh giá: thấp → cao" — bảng xếp lại 0, 0, 2, 3, 3, 3, 3.5, 3.6. Chọn
+thêm danh mục "Bột pha" — còn đúng 31 bản ghi, cột danh mục chỉ một giá trị,
+thứ tự sao vẫn tăng dần.

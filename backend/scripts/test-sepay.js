@@ -93,9 +93,12 @@ const goiWebhook = async (thayDoi = {}, khoa = KHOA) => {
     const sp = (await s.run('MATCH (p:Product) WHERE coalesce(p.stock,0) >= 10 RETURN p.id AS id LIMIT 1'))
       .records[0].get('id');
 
-    const datDon = async () => {
+    // Mac dinh dat don CHUYEN KHOAN: webhook SePay chi lien quan toi loai don nay.
+    // Neu de mac dinh COD thi endpoint /payment-qr se tra available=false va
+    // phan kiem tra ma QR o muc 6 bi bo qua ma khong ai nhan ra.
+    const datDon = async (paymentMethod = 'BANK_QR') => {
       const r = await call('POST', '/api/orders/buy-now', {
-        productId: sp, quantity: 1,
+        productId: sp, quantity: 1, paymentMethod,
         receiverName: 'Test SePay', phone: '0901234567', address: 'So 1 Test',
       });
       return r.body.data;
@@ -216,6 +219,15 @@ const goiWebhook = async (thayDoi = {}, khoa = KHOA) => {
       console.log('  (chua cau hinh SEPAY_ACCOUNT_NUMBER nen tra available=false — dung nhu thiet ke)');
       check('Bao ro la chua bat chuyen khoan', qr.body?.data?.available === false);
     }
+
+    // Don chon TIEN MAT thi khong duoc tra ma QR — khach ra cua hang tra tien
+    // va cho nhan vien duyet, dung nhu da chon luc dat hang.
+    const donTienMat = await datDon('COD');
+    const qrTienMat = await call('GET', `/api/orders/${donTienMat.order_id}/payment-qr`);
+    check('Don TIEN MAT -> khong tra ma QR', qrTienMat.body?.data?.available === false,
+      JSON.stringify(qrTienMat.body?.data));
+    check('Ly do noi ro la chon tien mat', /tiền mặt/i.test(qrTienMat.body?.data?.reason || ''),
+      qrTienMat.body?.data?.reason);
 
     const cuaNguoiKhac = await api(null)('GET', `/api/orders/${don6.order_id}/payment-qr`);
     check('Khong co token -> 401', cuaNguoiKhac.status === 401, `nhan ${cuaNguoiKhac.status}`);
