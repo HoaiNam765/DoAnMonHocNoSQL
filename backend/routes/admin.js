@@ -40,7 +40,7 @@ router.get(
         // duyệt cạnh BOUGHT — xem ghi chú sửa lỗi trong adminStatsCypher.js
         readQuery(statsQ.RECENT_ACTIVITY),
         readQuery(statsQ.ORDER_SUMMARY),
-        readQuery(statsQ.REVENUE_BY_PERIOD, { groupBy: 'month', fromDate: null, toDate: null }),
+        readQuery(statsQ.REVENUE_BY_PERIOD, { groupBy: 'day', fromDate: null, toDate: null }),
         readQuery(statsQ.LOW_STOCK_PRODUCTS, { threshold: int(10) }),
       ]);
 

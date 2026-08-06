@@ -264,10 +264,11 @@ function Overview({ stats, onNavigate }) {
     const summary = stats?.summary || {};
     const orderSummary = stats?.orderSummary || {};
 
-    const [groupBy, setGroupBy] = useState("month");
+    const [groupBy, setGroupBy] = useState("day");
     const [range, setRange] = useState({ from: "", to: "" });
     const [series, setSeries] = useState(stats?.revenueByPeriod || []);
     const [loadingChart, setLoadingChart] = useState(false);
+    const [hoveredBar, setHoveredBar] = useState(null);
 
     useEffect(() => {
         if (stats?.revenueByPeriod) {
@@ -310,30 +311,34 @@ function Overview({ stats, onNavigate }) {
 
     const clearRange = () => setRange({ from: "", to: "" });
 
-    // --- Toạ độ biểu đồ ---
-    const WIDTH = 320;
-    const HEIGHT = 160;
-    const maxValue = Math.max(...series.map((d) => Number(d.revenue || 0)), 1);
-    const stepX = WIDTH / Math.max(series.length - 1, 1);
-    const pointAt = (item, index) => ({
-        x: series.length === 1 ? WIDTH / 2 : index * stepX,
-        y: HEIGHT - (Number(item.revenue || 0) / maxValue) * (HEIGHT - 20) - 10,
-    });
-
-    const chartPoints = series.map((d, i) => {
-        const { x, y } = pointAt(d, i);
-        return `${x},${y}`;
-    }).join(" ");
-
-    const areaPath = (() => {
-        if (!series.length) return "";
-        const pts = series.map((d, i) => pointAt(d, i));
-        const line = pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x} ${p.y}`).join(" ");
-        return `${line} L${pts[pts.length - 1].x} ${HEIGHT} L${pts[0].x} ${HEIGHT} Z`;
-    })();
-
     const totalInRange = series.reduce((s, d) => s + Number(d.revenue || 0), 0);
     const ordersInRange = series.reduce((s, d) => s + Number(d.order_count || 0), 0);
+    const maxRevenue = Math.max(...series.map((d) => Number(d.revenue || 0)), 1);
+
+    // Kích thước khung vẽ SVG cho biểu đồ cột
+    const SVG_W = 800;
+    const SVG_H = 260;
+    const PADDING_LEFT = 75;
+    const PADDING_BOTTOM = 45;
+    const PADDING_TOP = 30;
+    const PADDING_RIGHT = 25;
+
+    const CHART_W = SVG_W - PADDING_LEFT - PADDING_RIGHT;
+    const CHART_H = SVG_H - PADDING_TOP - PADDING_BOTTOM;
+
+    // Định dạng nhãn hiển thị ngày/tháng/năm ngắn gọn
+    const formatPeriodLabel = (periodStr) => {
+        if (!periodStr) return "";
+        if (groupBy === "day") {
+            const parts = periodStr.split("-");
+            return parts.length === 3 ? `${parts[2]}/${parts[1]}` : periodStr;
+        }
+        if (groupBy === "month") {
+            const parts = periodStr.split("-");
+            return parts.length === 2 ? `T${parts[1]}/${parts[0].slice(2)}` : periodStr;
+        }
+        return periodStr;
+    };
 
     return (
         <section className="admin-content">
@@ -376,34 +381,45 @@ function Overview({ stats, onNavigate }) {
                 />
             </div>
 
-            {/* Biểu đồ doanh thu + bộ lọc */}
-            <section className="panel chart-panel">
-                <div className="panel-heading">
+            {/* Biểu đồ cột Doanh thu theo thời gian + bộ lọc */}
+            <section className="panel chart-panel" style={{ padding: "24px" }}>
+                <div className="panel-heading" style={{ marginBottom: "16px" }}>
                     <div>
-                        <span className="eyebrow">TREND</span>
-                        <h3>Doanh thu theo thời gian</h3>
+                        <span className="eyebrow" style={{ color: "#3b82f6", fontWeight: "700" }}>
+                            📊 BIỂU ĐỒ CỘT DOANH THU
+                        </span>
+                        <h3 style={{ margin: "4px 0 0", fontSize: "20px" }}>
+                            Doanh thu {groupBy === "day" ? "theo ngày" : groupBy === "month" ? "theo tháng" : "theo năm"}
+                        </h3>
                     </div>
-                    <span className="muted">
-                        {money(totalInRange)} · {ordersInRange} đơn
-                    </span>
+                    <div style={{ textAlign: "right" }}>
+                        <div style={{ fontSize: "18px", fontWeight: "800", color: "#1e293b" }}>
+                            {money(totalInRange)}
+                        </div>
+                        <span className="muted" style={{ fontSize: "13px" }}>
+                            {ordersInRange} đơn đã thanh toán
+                        </span>
+                    </div>
                 </div>
 
+                {/* Thanh công cụ lọc thời gian */}
                 <div style={filterBar}>
                     <div style={{ display: "flex", gap: "6px" }}>
-                        <button style={chip(groupBy === "month")} onClick={() => setGroupBy("month")}>
-                            Theo tháng
-                        </button>
                         <button style={chip(groupBy === "day")} onClick={() => setGroupBy("day")}>
-                            Theo ngày
+                            📅 Theo ngày
+                        </button>
+                        <button style={chip(groupBy === "month")} onClick={() => setGroupBy("month")}>
+                            🗓️ Theo tháng
                         </button>
                         <button style={chip(groupBy === "year")} onClick={() => setGroupBy("year")}>
-                            Theo năm
+                            📊 Theo năm
                         </button>
                     </div>
 
                     <div style={{ display: "flex", gap: "6px" }}>
-                        <button style={chip(false)} onClick={() => applyPreset(7)}>7 ngày</button>
-                        <button style={chip(false)} onClick={() => applyPreset(30)}>30 ngày</button>
+                        <button style={chip(false)} onClick={() => applyPreset(7)}>7 ngày qua</button>
+                        <button style={chip(false)} onClick={() => applyPreset(14)}>14 ngày qua</button>
+                        <button style={chip(false)} onClick={() => applyPreset(30)}>30 ngày qua</button>
                     </div>
 
                     <div style={{ display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" }}>
@@ -427,31 +443,217 @@ function Overview({ stats, onNavigate }) {
                 </div>
 
                 {loadingChart ? (
-                    <div className="chart-empty">Đang tải dữ liệu doanh thu...</div>
+                    <div className="chart-empty" style={{ padding: "60px 0", textAlign: "center", color: "#64748b" }}>
+                        ⏳ Đang tải dữ liệu doanh thu...
+                    </div>
                 ) : series.length ? (
-                    <div className="revenue-chart">
-                        <svg viewBox="0 0 320 160" role="img" aria-label="Doanh thu theo thời gian">
-                            <path className="chart-area" d={areaPath} />
-                            <polyline className="chart-line" points={chartPoints} />
-                            <g>
-                                {series.map((item, index) => {
-                                    const { x, y } = pointAt(item, index);
-                                    return (
-                                        <circle key={item.period} className="chart-point" cx={x} cy={y} r="4">
-                                            <title>{`${item.period}: ${money(item.revenue)} (${item.order_count} đơn)`}</title>
-                                        </circle>
-                                    );
-                                })}
-                            </g>
+                    <div style={{ position: "relative", width: "100%", overflowX: "auto" }}>
+                        <svg
+                            viewBox={`0 0 ${SVG_W} ${SVG_H}`}
+                            style={{ width: "100%", height: "auto", display: "block" }}
+                            role="img"
+                            aria-label="Biểu đồ cột doanh thu"
+                        >
+                            <defs>
+                                {/* Gradient cột chuẩn: Xanh dương hoàng gia sắc nét */}
+                                <linearGradient id="barGradientStandard" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="0%" stopColor="#3b82f6" />
+                                    <stop offset="100%" stopColor="#1d4ed8" />
+                                </linearGradient>
+
+                                {/* Gradient cột cao nhất: Vàng kim sang trọng */}
+                                <linearGradient id="barGradientPeak" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="0%" stopColor="#f59e0b" />
+                                    <stop offset="100%" stopColor="#d97706" />
+                                </linearGradient>
+
+                                {/* Gradient cột khi Hover: Xanh sáng nổi bật */}
+                                <linearGradient id="barGradientHover" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="0%" stopColor="#60a5fa" />
+                                    <stop offset="100%" stopColor="#2563eb" />
+                                </linearGradient>
+
+                                <filter id="barShadow" x="-10%" y="-10%" width="120%" height="120%">
+                                    <feDropShadow dx="0" dy="4" stdDeviation="3" floodColor="#1e3a8a" floodOpacity="0.25" />
+                                </filter>
+                            </defs>
+
+                            {/* Các đường lưới ngang (Grid lines) & giá trị trục Y */}
+                            {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+                                const yVal = PADDING_TOP + CHART_H * (1 - ratio);
+                                const labelVal = Math.round(maxRevenue * ratio);
+                                const formatY = labelVal >= 1000000 
+                                    ? `${(labelVal / 1000000).toFixed(1)}M` 
+                                    : labelVal >= 1000 
+                                    ? `${Math.round(labelVal / 1000)}k` 
+                                    : `${labelVal}`;
+
+                                return (
+                                    <g key={ratio}>
+                                        <line
+                                            x1={PADDING_LEFT}
+                                            y1={yVal}
+                                            x2={SVG_W - PADDING_RIGHT}
+                                            y2={yVal}
+                                            stroke="#e2e8f0"
+                                            strokeDasharray={ratio === 0 ? "none" : "4 4"}
+                                            strokeWidth={ratio === 0 ? "1.5" : "1"}
+                                        />
+                                        <text
+                                            x={PADDING_LEFT - 10}
+                                            y={yVal + 4}
+                                            textAnchor="end"
+                                            fontSize="11"
+                                            fill="#64748b"
+                                            fontWeight="600"
+                                        >
+                                            {formatY}
+                                        </text>
+                                    </g>
+                                );
+                            })}
+
+                            {/* Vẽ các cột (Bars) */}
+                            {series.map((item, index) => {
+                                const rev = Number(item.revenue || 0);
+                                const isPeak = rev === maxRevenue && rev > 0;
+                                const isHovered = hoveredBar === index;
+
+                                const count = series.length;
+                                const groupWidth = CHART_W / count;
+                                const barWidth = Math.min(42, Math.max(12, groupWidth * 0.65));
+                                const xPos = PADDING_LEFT + index * groupWidth + (groupWidth - barWidth) / 2;
+
+                                const barHeight = maxRevenue > 0 ? (rev / maxRevenue) * CHART_H : 0;
+                                // Giữ độ cao tối thiểu 4px để cột nhỏ vẫn click/hover được
+                                const displayHeight = Math.max(rev > 0 ? 6 : 0, barHeight);
+                                const yPos = PADDING_TOP + (CHART_H - displayHeight);
+
+                                const fillUrl = isHovered
+                                    ? "url(#barGradientHover)"
+                                    : isPeak
+                                    ? "url(#barGradientPeak)"
+                                    : "url(#barGradientStandard)";
+
+                                // Hiển thị nhãn thời gian trên trục X (chỉ hiện một số nếu cột quá dày)
+                                const showLabel = count <= 15 || index % Math.ceil(count / 12) === 0 || index === count - 1;
+
+                                return (
+                                    <g
+                                        key={item.period}
+                                        onMouseEnter={() => setHoveredBar(index)}
+                                        onMouseLeave={() => setHoveredBar(null)}
+                                        style={{ cursor: "pointer" }}
+                                    >
+                                        {/* Vùng cảm ứng ẩn rộng hơn cột thật để hover mượt */}
+                                        <rect
+                                            x={PADDING_LEFT + index * groupWidth}
+                                            y={PADDING_TOP}
+                                            width={groupWidth}
+                                            height={CHART_H}
+                                            fill="transparent"
+                                        />
+
+                                        {/* Cột chính */}
+                                        <rect
+                                            x={xPos}
+                                            y={yPos}
+                                            width={barWidth}
+                                            height={displayHeight}
+                                            rx="6"
+                                            ry="6"
+                                            fill={fillUrl}
+                                            filter={isHovered || isPeak ? "url(#barShadow)" : "none"}
+                                            style={{
+                                                transition: "all 0.25s cubic-bezier(0.4, 0, 0.2, 1)",
+                                                transformOrigin: `${xPos + barWidth / 2}px ${PADDING_TOP + CHART_H}px`,
+                                            }}
+                                        />
+
+                                        {/* Điểm nhấn / vạch đầu cột */}
+                                        {rev > 0 && (
+                                            <rect
+                                                x={xPos}
+                                                y={yPos}
+                                                width={barWidth}
+                                                height="3"
+                                                rx="1.5"
+                                                fill={isPeak ? "#fef08a" : "#93c5fd"}
+                                            />
+                                        )}
+
+                                        {/* Con số ngắn trên đầu cột nếu vừa phải số cột */}
+                                        {count <= 12 && rev > 0 && (
+                                            <text
+                                                x={xPos + barWidth / 2}
+                                                y={yPos - 8}
+                                                textAnchor="middle"
+                                                fontSize="10"
+                                                fontWeight="700"
+                                                fill={isPeak ? "#d97706" : "#2563eb"}
+                                            >
+                                                {rev >= 1000000 ? `${(rev / 1000000).toFixed(1)}M` : `${Math.round(rev / 1000)}k`}
+                                            </text>
+                                        )}
+
+                                        {/* Nhãn mốc thời gian trục X */}
+                                        {showLabel && (
+                                            <text
+                                                x={xPos + barWidth / 2}
+                                                y={SVG_H - 12}
+                                                textAnchor="middle"
+                                                fontSize="11"
+                                                fill={isHovered ? "#1e293b" : "#64748b"}
+                                                fontWeight={isHovered ? "700" : "500"}
+                                            >
+                                                {formatPeriodLabel(item.period)}
+                                            </text>
+                                        )}
+                                    </g>
+                                );
+                            })}
                         </svg>
-                        <div className="chart-labels">
-                            {series.map((item) => (
-                                <span key={item.period}>{item.period}</span>
-                            ))}
-                        </div>
+
+                        {/* Tooltip khi di chuột vào cột */}
+                        {hoveredBar !== null && series[hoveredBar] && (
+                            <div
+                                style={{
+                                    position: "absolute",
+                                    top: "16px",
+                                    right: "20px",
+                                    background: "#0f172a",
+                                    color: "#ffffff",
+                                    padding: "10px 16px",
+                                    borderRadius: "10px",
+                                    boxShadow: "0 10px 25px rgba(0,0,0,0.3)",
+                                    fontSize: "13px",
+                                    pointerEvents: "none",
+                                    zIndex: 10,
+                                    border: "1px solid #334155",
+                                    display: "flex",
+                                    gap: "14px",
+                                    alignItems: "center",
+                                }}
+                            >
+                                <div>
+                                    <div style={{ color: "#94a3b8", fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                                        {groupBy === "day" ? "Ngày" : groupBy === "month" ? "Tháng" : "Năm"} {series[hoveredBar].period}
+                                    </div>
+                                    <div style={{ fontSize: "16px", fontWeight: "800", color: "#38bdf8", marginTop: "2px" }}>
+                                        {money(series[hoveredBar].revenue)}
+                                    </div>
+                                </div>
+                                <div style={{ borderLeft: "1px solid #334155", paddingLeft: "12px" }}>
+                                    <div style={{ color: "#94a3b8", fontSize: "11px" }}>Đơn hoàn tất</div>
+                                    <div style={{ fontWeight: "700", color: "#f8fafc", marginTop: "2px" }}>
+                                        {series[hoveredBar].order_count} đơn hàng
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 ) : (
-                    <div className="chart-empty">
+                    <div className="chart-empty" style={{ padding: "60px 0", textAlign: "center", color: "#94a3b8" }}>
                         Chưa có đơn hàng nào đã thanh toán trong khoảng thời gian này.
                     </div>
                 )}

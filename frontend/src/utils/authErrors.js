@@ -8,14 +8,15 @@
  */
 
 const MESSAGES = {
-  // --- Sai thông tin đăng nhập ---
+  // --- Sai thông tin đăng nhập & khôi phục mật khẩu ---
   'auth/invalid-credential': 'Email hoặc mật khẩu không đúng.',
-  'auth/user-not-found': 'Email hoặc mật khẩu không đúng.',
+  'auth/user-not-found': 'Không tìm thấy tài khoản với email này hoặc thông tin đăng nhập không đúng.',
   'auth/wrong-password': 'Email hoặc mật khẩu không đúng.',
   'auth/invalid-email': 'Email không hợp lệ.',
+  'auth/missing-email': 'Vui lòng nhập địa chỉ email.',
   'auth/user-disabled': 'Tài khoản này đã bị vô hiệu hoá.',
   'auth/too-many-requests':
-    'Tài khoản tạm thời bị khoá do đăng nhập sai quá nhiều. Vui lòng thử lại sau.',
+    'Tài khoản tạm thời bị khoá do gửi quá nhiều yêu cầu. Vui lòng thử lại sau.',
 
   // --- Đăng ký ---
   'auth/email-already-in-use': 'Email này đã được đăng ký.',
@@ -41,7 +42,7 @@ const MESSAGES = {
 /** Các mã không cần hiện lỗi vì là hành động cố ý của người dùng. */
 export const SILENT_CODES = ['auth/popup-closed-by-user', 'auth/cancelled-popup-request'];
 
-export function getFriendlyErrorMessage(error) {
+export function getFriendlyErrorMessage(error, defaultPrefix = 'Thao tác thất bại') {
   // Lỗi từ backend (fetch) — không có mã Firebase
   if (error?.status === 403) return 'Tài khoản chưa được cấp quyền Admin.';
 
@@ -50,6 +51,7 @@ export function getFriendlyErrorMessage(error) {
 
   // Mã lạ: vẫn hiện mã gốc để còn tra cứu / báo lỗi được
   return code
-    ? `Đăng nhập thất bại (${code}).`
-    : `Đăng nhập thất bại. ${error?.message || 'Vui lòng thử lại.'}`;
+    ? `${defaultPrefix} (${code}).`
+    : `${defaultPrefix}. ${error?.message || 'Vui lòng thử lại.'}`;
 }
+
